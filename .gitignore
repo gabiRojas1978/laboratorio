@@ -2,3 +2,4 @@ config/database.local.php
 config/config copy.php
 storage/empresa_*/logo_certificado.*
 storage/empresa_*/certificado_config.json
+storage/empresa_*/certificado_*.pdf
