@@ -1,0 +1,4 @@
+config/database.local.php
+config/config copy.php
+storage/empresa_*/logo_certificado.*
+storage/empresa_*/certificado_config.json

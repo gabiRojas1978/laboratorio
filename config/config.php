@@ -5,11 +5,27 @@ declare(strict_types=1);
 const APP_NAME = 'Laboratorio Leucaena';
 const APP_BRAND = 'Laboratorio de Análisis de Semillas';
 const APP_SUBTITLE = 'LEUCAENA';
-const DB_HOST = 'localhost';
-const DB_NAME = 'laboratorio';
-const DB_USER = 'root';
-const DB_PASS = '';
-const DB_CHARSET = 'utf8mb4';
+
+$databaseConfig = [
+    'host' => getenv('DB_HOST') ?: 'localhost',
+    'name' => getenv('DB_NAME') ?: 'laboratorio',
+    'user' => getenv('DB_USER') ?: 'root',
+    'pass' => getenv('DB_PASS') ?: '',
+    'charset' => getenv('DB_CHARSET') ?: 'utf8mb4',
+];
+$localDatabaseConfigFile = __DIR__ . '/database.local.php';
+if (is_file($localDatabaseConfigFile)) {
+    $localDatabaseConfig = require $localDatabaseConfigFile;
+    if (is_array($localDatabaseConfig)) {
+        $databaseConfig = array_merge($databaseConfig, $localDatabaseConfig);
+    }
+}
+
+define('DB_HOST', (string) $databaseConfig['host']);
+define('DB_NAME', (string) $databaseConfig['name']);
+define('DB_USER', (string) $databaseConfig['user']);
+define('DB_PASS', (string) $databaseConfig['pass']);
+define('DB_CHARSET', (string) $databaseConfig['charset']);
 
 if (session_status() !== PHP_SESSION_ACTIVE) {
     session_start();

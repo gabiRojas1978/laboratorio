@@ -4,6 +4,64 @@ declare(strict_types=1);
 
 require __DIR__ . '/config/config.php';
 
+function certificate_logo_path(int $idEmpresa): ?string
+{
+    $directory = empresa_storage_dir($idEmpresa);
+    foreach (['png', 'jpg', 'jpeg', 'webp'] as $extension) {
+        $path = $directory . DIRECTORY_SEPARATOR . 'logo_certificado.' . $extension;
+        if (is_file($path)) {
+            return $path;
+        }
+    }
+
+    return null;
+}
+
+function remove_certificate_logo(int $idEmpresa): void
+{
+    $directory = empresa_storage_dir($idEmpresa);
+    foreach (['png', 'jpg', 'jpeg', 'webp'] as $extension) {
+        $path = $directory . DIRECTORY_SEPARATOR . 'logo_certificado.' . $extension;
+        if (is_file($path)) {
+            @unlink($path);
+        }
+    }
+}
+
+function certificate_settings_path(int $idEmpresa): string
+{
+    return empresa_storage_dir($idEmpresa) . DIRECTORY_SEPARATOR . 'certificado_config.json';
+}
+
+function get_certificate_settings(int $idEmpresa): array
+{
+    $settings = [
+        'localidad_pais' => '',
+        'firma_director_tecnico' => '',
+    ];
+    $contents = @file_get_contents(certificate_settings_path($idEmpresa));
+    $savedSettings = json_decode((string) $contents, true);
+
+    if (!is_array($savedSettings)) {
+        return $settings;
+    }
+
+    foreach (array_keys($settings) as $key) {
+        if (isset($savedSettings[$key])) {
+            $settings[$key] = trim((string) $savedSettings[$key]);
+        }
+    }
+
+    return $settings;
+}
+
+function save_certificate_settings(int $idEmpresa, array $settings): bool
+{
+    $encodedSettings = json_encode($settings, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+    return $encodedSettings !== false
+        && file_put_contents(certificate_settings_path($idEmpresa), $encodedSettings, LOCK_EX) !== false;
+}
+
 function format_date_short(?string $date): string
 {
     if ($date === null || $date === '') {
@@ -76,6 +134,42 @@ function format_text_value($value, string $fallback = 'N'): string
     return $text !== '' ? $text : $fallback;
 }
 
+function normalize_client_emails($rawEmails): array
+{
+    if (!is_array($rawEmails)) {
+        return [];
+    }
+
+    $emails = [];
+    foreach ($rawEmails as $rawEmail) {
+        $email = trim((string) $rawEmail);
+        if ($email === '') {
+            continue;
+        }
+
+        $emails[] = $email;
+    }
+
+    return array_values(array_unique($emails));
+}
+
+function client_emails_table_exists(): bool
+{
+    static $exists = null;
+    if ($exists !== null) {
+        return $exists;
+    }
+
+    try {
+        db()->query('SELECT 1 FROM cliente_emails LIMIT 1');
+        $exists = true;
+    } catch (Throwable $throwable) {
+        $exists = false;
+    }
+
+    return $exists;
+}
+
 $navigation = [
     'administracion' => [
         'label' => 'Administración',
@@ -106,7 +200,7 @@ if (is_superadmin()) {
 }
 
 $pageMap = [
-    'dashboard' => ['title' => 'Inicio', 'subtitle' => 'Resumen general del sistema'],
+    'dashboard' => ['title' => 'Inicio', 'subtitle' => ''],
     'clientes' => ['title' => 'Clientes', 'subtitle' => 'Gestión de clientes'],
     'especies' => ['title' => 'Especies', 'subtitle' => 'Catálogo de especies'],
     'cultivares' => ['title' => 'Cultivares', 'subtitle' => 'Registro de cultivares'],
@@ -134,7 +228,7 @@ $clientForm = [
     'nombre_cliente' => '',
     'telefono_cliente' => '',
     'direccion_cliente' => '',
-    'mail_cliente' => '',
+    'emails_cliente' => [''],
     'cuit_cliente' => '',
 ];
 $clientEditId = null;
@@ -255,6 +349,72 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['login'])) {
     $errors[] = 'Usuario o contraseña incorrectos.';
 }
 
+if (is_logged_in() && $_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['save_logo_certificado'])) {
+    $logoUpload = $_FILES['logo_certificado'] ?? null;
+
+    if (!is_array($logoUpload) || ($logoUpload['error'] ?? UPLOAD_ERR_NO_FILE) !== UPLOAD_ERR_OK) {
+        $errors[] = 'Debes seleccionar una imagen para el logo.';
+    } elseif ((int) ($logoUpload['size'] ?? 0) > 5 * 1024 * 1024) {
+        $errors[] = 'El logo no puede superar los 5 MB.';
+    } elseif (!is_uploaded_file((string) ($logoUpload['tmp_name'] ?? ''))) {
+        $errors[] = 'No fue posible validar el archivo cargado.';
+    } else {
+        $imageInfo = @getimagesize((string) $logoUpload['tmp_name']);
+        $extensionByMime = [
+            'image/jpeg' => 'jpg',
+            'image/png' => 'png',
+            'image/webp' => 'webp',
+        ];
+        $extension = is_array($imageInfo) ? ($extensionByMime[$imageInfo['mime'] ?? ''] ?? null) : null;
+
+        if ($extension === null) {
+            $errors[] = 'El logo debe ser una imagen PNG, JPG o WebP válida.';
+        } else {
+            $logoDirectory = empresa_storage_dir(current_empresa_id());
+            $temporaryLogoPath = $logoDirectory . DIRECTORY_SEPARATOR . '.logo_certificado_upload.' . $extension;
+            $logoPath = $logoDirectory . DIRECTORY_SEPARATOR . 'logo_certificado.' . $extension;
+
+            if (!move_uploaded_file((string) $logoUpload['tmp_name'], $temporaryLogoPath)) {
+                $errors[] = 'No fue posible guardar el logo. Verifica los permisos de la carpeta de almacenamiento.';
+            } else {
+                remove_certificate_logo(current_empresa_id());
+                if (!rename($temporaryLogoPath, $logoPath)) {
+                    @unlink($temporaryLogoPath);
+                    $errors[] = 'No fue posible activar el logo cargado.';
+                } else {
+                    $_SESSION['success_message'] = 'Logo del certificado actualizado correctamente.';
+                    header('Location: /index.php?page=configuracion');
+                    exit;
+                }
+            }
+        }
+    }
+}
+
+if (is_logged_in() && $_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['delete_logo_certificado'])) {
+    remove_certificate_logo(current_empresa_id());
+    $_SESSION['success_message'] = 'Logo personalizado eliminado. Se utilizará el membrete predeterminado.';
+    header('Location: /index.php?page=configuracion');
+    exit;
+}
+
+if (is_logged_in() && $_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['save_datos_certificado'])) {
+    $certificateSettings = [
+        'localidad_pais' => trim((string) ($_POST['localidad_pais_certificado'] ?? '')),
+        'firma_director_tecnico' => trim((string) ($_POST['firma_director_tecnico'] ?? '')),
+    ];
+
+    if (strlen($certificateSettings['localidad_pais']) > 255 || strlen($certificateSettings['firma_director_tecnico']) > 255) {
+        $errors[] = 'La localidad y la firma pueden tener hasta 255 caracteres.';
+    } elseif (!save_certificate_settings(current_empresa_id(), $certificateSettings)) {
+        $errors[] = 'No fue posible guardar los datos del certificado. Verifica los permisos de la carpeta de almacenamiento.';
+    } else {
+        $_SESSION['success_message'] = 'Datos del pie de certificado actualizados correctamente.';
+        header('Location: /index.php?page=configuracion');
+        exit;
+    }
+}
+
 if (is_superadmin() && $_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['save_empresa'])) {
     $empresaForm['nombre_empresa'] = trim((string) ($_POST['nombre_empresa'] ?? ''));
     $empresaAdminForm['nombre_usuario'] = trim((string) ($_POST['admin_nombre_usuario'] ?? ''));
@@ -355,8 +515,12 @@ if (is_logged_in() && $_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['sav
     $clientForm['nombre_cliente'] = trim((string) ($_POST['nombre_cliente'] ?? ''));
     $clientForm['telefono_cliente'] = trim((string) ($_POST['telefono_cliente'] ?? ''));
     $clientForm['direccion_cliente'] = trim((string) ($_POST['direccion_cliente'] ?? ''));
-    $clientForm['mail_cliente'] = trim((string) ($_POST['mail_cliente'] ?? ''));
+    $clientForm['emails_cliente'] = normalize_client_emails($_POST['emails_cliente'] ?? []);
     $clientForm['cuit_cliente'] = trim((string) ($_POST['cuit_cliente'] ?? ''));
+
+    if ($clientForm['emails_cliente'] === []) {
+        $clientForm['emails_cliente'] = [''];
+    }
 
     if ($clientForm['nombre_cliente'] === '') {
         $errors[] = 'El nombre del cliente es obligatorio.';
@@ -366,23 +530,60 @@ if (is_logged_in() && $_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['sav
         $errors[] = 'El CUIT ingresado no tiene un formato válido.';
     }
 
-    if ($clientForm['mail_cliente'] !== '' && !filter_var($clientForm['mail_cliente'], FILTER_VALIDATE_EMAIL)) {
-        $errors[] = 'El email ingresado no es válido.';
+    foreach ($clientForm['emails_cliente'] as $emailCliente) {
+        if ($emailCliente !== '' && !filter_var($emailCliente, FILTER_VALIDATE_EMAIL)) {
+            $errors[] = 'Uno de los emails ingresados no es válido.';
+            break;
+        }
     }
 
     if (!$errors) {
         try {
-            $statement = db()->prepare(
-                'INSERT INTO clientes (id_empresa, nombre_cliente, telefono_cliente, direccion_cliente, mail_cliente, cuit_cliente) VALUES (:id_empresa, :nombre_cliente, :telefono_cliente, :direccion_cliente, :mail_cliente, :cuit_cliente)'
-            );
-            $statement->execute([
-                ':id_empresa' => current_empresa_id(),
-                ':nombre_cliente' => $clientForm['nombre_cliente'],
-                ':telefono_cliente' => $clientForm['telefono_cliente'] !== '' ? $clientForm['telefono_cliente'] : null,
-                ':direccion_cliente' => $clientForm['direccion_cliente'] !== '' ? $clientForm['direccion_cliente'] : null,
-                ':mail_cliente' => $clientForm['mail_cliente'] !== '' ? $clientForm['mail_cliente'] : null,
-                ':cuit_cliente' => $clientForm['cuit_cliente'] !== '' ? $clientForm['cuit_cliente'] : null,
-            ]);
+            db()->beginTransaction();
+
+            $primaryClientEmail = $clientForm['emails_cliente'][0] ?? '';
+
+            if (client_emails_table_exists()) {
+                $statement = db()->prepare(
+                    'INSERT INTO clientes (id_empresa, nombre_cliente, telefono_cliente, direccion_cliente, cuit_cliente) VALUES (:id_empresa, :nombre_cliente, :telefono_cliente, :direccion_cliente, :cuit_cliente)'
+                );
+                $statement->execute([
+                    ':id_empresa' => current_empresa_id(),
+                    ':nombre_cliente' => $clientForm['nombre_cliente'],
+                    ':telefono_cliente' => $clientForm['telefono_cliente'] !== '' ? $clientForm['telefono_cliente'] : null,
+                    ':direccion_cliente' => $clientForm['direccion_cliente'] !== '' ? $clientForm['direccion_cliente'] : null,
+                    ':cuit_cliente' => $clientForm['cuit_cliente'] !== '' ? $clientForm['cuit_cliente'] : null,
+                ]);
+            } else {
+                $statement = db()->prepare(
+                    'INSERT INTO clientes (id_empresa, nombre_cliente, telefono_cliente, direccion_cliente, mail_cliente, cuit_cliente) VALUES (:id_empresa, :nombre_cliente, :telefono_cliente, :direccion_cliente, :mail_cliente, :cuit_cliente)'
+                );
+                $statement->execute([
+                    ':id_empresa' => current_empresa_id(),
+                    ':nombre_cliente' => $clientForm['nombre_cliente'],
+                    ':telefono_cliente' => $clientForm['telefono_cliente'] !== '' ? $clientForm['telefono_cliente'] : null,
+                    ':direccion_cliente' => $clientForm['direccion_cliente'] !== '' ? $clientForm['direccion_cliente'] : null,
+                    ':mail_cliente' => $primaryClientEmail !== '' ? $primaryClientEmail : null,
+                    ':cuit_cliente' => $clientForm['cuit_cliente'] !== '' ? $clientForm['cuit_cliente'] : null,
+                ]);
+            }
+
+            $newClientId = (int) db()->lastInsertId();
+            if (client_emails_table_exists() && $clientForm['emails_cliente'] !== ['']) {
+                $emailInsert = db()->prepare(
+                    'INSERT INTO cliente_emails (id_empresa, id_cliente, email_cliente, principal_email, activo_email) VALUES (:id_empresa, :id_cliente, :email_cliente, :principal_email, 1)'
+                );
+                foreach ($clientForm['emails_cliente'] as $index => $emailCliente) {
+                    $emailInsert->execute([
+                        ':id_empresa' => current_empresa_id(),
+                        ':id_cliente' => $newClientId,
+                        ':email_cliente' => $emailCliente,
+                        ':principal_email' => $index === 0 ? 1 : 0,
+                    ]);
+                }
+            }
+
+            db()->commit();
 
             $successMessage = 'Cliente dado de alta correctamente.';
             $_SESSION['success_message'] = $successMessage;
@@ -390,7 +591,7 @@ if (is_logged_in() && $_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['sav
                 'nombre_cliente' => '',
                 'telefono_cliente' => '',
                 'direccion_cliente' => '',
-                'mail_cliente' => '',
+                'emails_cliente' => [''],
                 'cuit_cliente' => '',
             ];
 
@@ -399,6 +600,9 @@ if (is_logged_in() && $_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['sav
                 exit;
             }
         } catch (Throwable $throwable) {
+            if (db()->inTransaction()) {
+                db()->rollBack();
+            }
             if ((int) $throwable->getCode() === 23000) {
                 $errors[] = 'Ya existe un cliente con ese CUIT.';
             } else {
@@ -413,8 +617,12 @@ if (is_logged_in() && $_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['upd
     $clientForm['nombre_cliente'] = trim((string) ($_POST['nombre_cliente'] ?? ''));
     $clientForm['telefono_cliente'] = trim((string) ($_POST['telefono_cliente'] ?? ''));
     $clientForm['direccion_cliente'] = trim((string) ($_POST['direccion_cliente'] ?? ''));
-    $clientForm['mail_cliente'] = trim((string) ($_POST['mail_cliente'] ?? ''));
+    $clientForm['emails_cliente'] = normalize_client_emails($_POST['emails_cliente'] ?? []);
     $clientForm['cuit_cliente'] = trim((string) ($_POST['cuit_cliente'] ?? ''));
+
+    if ($clientForm['emails_cliente'] === []) {
+        $clientForm['emails_cliente'] = [''];
+    }
 
     if ($clientEditId === false) {
         $errors[] = 'El cliente a editar no es válido.';
@@ -428,35 +636,81 @@ if (is_logged_in() && $_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['upd
         $errors[] = 'El CUIT ingresado no tiene un formato válido.';
     }
 
-    if ($clientForm['mail_cliente'] !== '' && !filter_var($clientForm['mail_cliente'], FILTER_VALIDATE_EMAIL)) {
-        $errors[] = 'El email ingresado no es válido.';
+    foreach ($clientForm['emails_cliente'] as $emailCliente) {
+        if ($emailCliente !== '' && !filter_var($emailCliente, FILTER_VALIDATE_EMAIL)) {
+            $errors[] = 'Uno de los emails ingresados no es válido.';
+            break;
+        }
     }
 
     if (!$errors) {
         try {
-            $statement = db()->prepare(
-                'UPDATE clientes SET nombre_cliente = :nombre_cliente, telefono_cliente = :telefono_cliente, direccion_cliente = :direccion_cliente, mail_cliente = :mail_cliente, cuit_cliente = :cuit_cliente WHERE id_cliente = :id_cliente AND id_empresa = :id_empresa'
-            );
-            $statement->execute([
-                ':nombre_cliente' => $clientForm['nombre_cliente'],
-                ':telefono_cliente' => $clientForm['telefono_cliente'] !== '' ? $clientForm['telefono_cliente'] : null,
-                ':direccion_cliente' => $clientForm['direccion_cliente'] !== '' ? $clientForm['direccion_cliente'] : null,
-                ':mail_cliente' => $clientForm['mail_cliente'] !== '' ? $clientForm['mail_cliente'] : null,
-                ':cuit_cliente' => $clientForm['cuit_cliente'] !== '' ? $clientForm['cuit_cliente'] : null,
-                ':id_cliente' => $clientEditId,
-                ':id_empresa' => current_empresa_id(),
-            ]);
+            db()->beginTransaction();
+
+            $primaryClientEmail = $clientForm['emails_cliente'][0] ?? '';
+
+            if (client_emails_table_exists()) {
+                $statement = db()->prepare(
+                    'UPDATE clientes SET nombre_cliente = :nombre_cliente, telefono_cliente = :telefono_cliente, direccion_cliente = :direccion_cliente, cuit_cliente = :cuit_cliente WHERE id_cliente = :id_cliente AND id_empresa = :id_empresa'
+                );
+                $statement->execute([
+                    ':nombre_cliente' => $clientForm['nombre_cliente'],
+                    ':telefono_cliente' => $clientForm['telefono_cliente'] !== '' ? $clientForm['telefono_cliente'] : null,
+                    ':direccion_cliente' => $clientForm['direccion_cliente'] !== '' ? $clientForm['direccion_cliente'] : null,
+                    ':cuit_cliente' => $clientForm['cuit_cliente'] !== '' ? $clientForm['cuit_cliente'] : null,
+                    ':id_cliente' => $clientEditId,
+                    ':id_empresa' => current_empresa_id(),
+                ]);
+
+                $emailDelete = db()->prepare('DELETE FROM cliente_emails WHERE id_cliente = :id_cliente AND id_empresa = :id_empresa');
+                $emailDelete->execute([
+                    ':id_cliente' => $clientEditId,
+                    ':id_empresa' => current_empresa_id(),
+                ]);
+
+                if ($clientForm['emails_cliente'] !== ['']) {
+                    $emailInsert = db()->prepare(
+                        'INSERT INTO cliente_emails (id_empresa, id_cliente, email_cliente, principal_email, activo_email) VALUES (:id_empresa, :id_cliente, :email_cliente, :principal_email, 1)'
+                    );
+                    foreach ($clientForm['emails_cliente'] as $index => $emailCliente) {
+                        $emailInsert->execute([
+                            ':id_empresa' => current_empresa_id(),
+                            ':id_cliente' => $clientEditId,
+                            ':email_cliente' => $emailCliente,
+                            ':principal_email' => $index === 0 ? 1 : 0,
+                        ]);
+                    }
+                }
+            } else {
+                $statement = db()->prepare(
+                    'UPDATE clientes SET nombre_cliente = :nombre_cliente, telefono_cliente = :telefono_cliente, direccion_cliente = :direccion_cliente, mail_cliente = :mail_cliente, cuit_cliente = :cuit_cliente WHERE id_cliente = :id_cliente AND id_empresa = :id_empresa'
+                );
+                $statement->execute([
+                    ':nombre_cliente' => $clientForm['nombre_cliente'],
+                    ':telefono_cliente' => $clientForm['telefono_cliente'] !== '' ? $clientForm['telefono_cliente'] : null,
+                    ':direccion_cliente' => $clientForm['direccion_cliente'] !== '' ? $clientForm['direccion_cliente'] : null,
+                    ':mail_cliente' => $primaryClientEmail !== '' ? $primaryClientEmail : null,
+                    ':cuit_cliente' => $clientForm['cuit_cliente'] !== '' ? $clientForm['cuit_cliente'] : null,
+                    ':id_cliente' => $clientEditId,
+                    ':id_empresa' => current_empresa_id(),
+                ]);
+            }
+
+            db()->commit();
 
             $successMessage = 'Cliente actualizado correctamente.';
             $_SESSION['success_message'] = $successMessage;
             $clientEditId = null;
-            $clientForm = ['nombre_cliente' => '', 'telefono_cliente' => '', 'direccion_cliente' => '', 'mail_cliente' => '', 'cuit_cliente' => ''];
+            $clientForm = ['nombre_cliente' => '', 'telefono_cliente' => '', 'direccion_cliente' => '', 'emails_cliente' => [''], 'cuit_cliente' => ''];
 
             if (($page ?? 'dashboard') !== 'clientes') {
                 header('Location: /index.php?page=clientes');
                 exit;
             }
         } catch (Throwable $throwable) {
+            if (db()->inTransaction()) {
+                db()->rollBack();
+            }
             if ((int) $throwable->getCode() === 23000) {
                 $errors[] = 'Ya existe un cliente con ese CUIT.';
             } else {
@@ -1069,8 +1323,8 @@ if (is_logged_in() && $_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['sav
                 ':ampara_totalidad_lote_certificado' => $certForm['ampara_totalidad_lote_certificado'],
                 ':localidad_pais_certificado' => $certForm['localidad_pais_certificado'] !== '' ? $certForm['localidad_pais_certificado'] : null,
                 ':fecha_emision_certificado' => $certForm['fecha_emision_certificado'] !== '' ? $certForm['fecha_emision_certificado'] : null,
-                ':clase_materia_inerte_certificado' => $certForm['clase_materia_inerte_certificado'] !== '' ? $certForm['clase_materia_inerte_certificado'] : null,
-                ':otras_semillas_certificado' => $certForm['otras_semillas_certificado'] !== '' ? $certForm['otras_semillas_certificado'] : null,
+                ':clase_materia_inerte_certificado' => $certForm['clase_materia_inerte_certificado'],
+                ':otras_semillas_certificado' => $certForm['otras_semillas_certificado'],
                 ':otras_determinaciones_texto_certificado' => $certForm['otras_determinaciones_texto_certificado'] !== '' ? $certForm['otras_determinaciones_texto_certificado'] : null,
             ]);
 
@@ -1196,6 +1450,7 @@ if (is_logged_in() && isset($_GET['pdf'])) {
         $otrasDet = $otrasDet !== '' ? $otrasDet . ', ' . $otrasDetTexto : $otrasDetTexto;
     }
 
+    $certificateSettings = get_certificate_settings(current_empresa_id());
     $claseMateria = trim((string) ($certificadoPdf['clase_materia_inerte_certificado'] ?? ''));
     $otrasSemillasTxt = trim((string) ($certificadoPdf['otras_semillas_certificado'] ?? ''));
     $amparaTotalidadLote = trim((string) ($certificadoPdf['ampara_totalidad_lote_certificado'] ?? 'N'));
@@ -1203,21 +1458,14 @@ if (is_logged_in() && isset($_GET['pdf'])) {
     $amparaNo = $amparaTotalidadLote === 'N' ? 'X' : ' ';
     $detalleDeterminaciones = $otrasDet !== '' ? htmlspecialchars($otrasDet, ENT_QUOTES, 'UTF-8') : 'N';
 
-    $membreteImagePath = __DIR__ . '/assets/img/membrete-leucaena.png';
-    $membreteImagePathNormalized = str_replace('\\', '/', $membreteImagePath);
-    $brandHeaderHtml = '<div class="center brand">'
-        . '<span class="brand-logo"></span>'
-        . '<span class="brand-text">'
-        . '<div class="brand-main">Laboratorio de<br>Análisis de Semillas</div>'
-        . '<div class="brand-sub">LEUCAENA</div>'
-        . '<div class="brand-rule"></div>'
-        . '</span>'
-        . '</div>';
+    $membreteImagePath = certificate_logo_path(current_empresa_id());
+    $brandHeaderHtml = '';
 
-    if (is_file($membreteImagePath)) {
+    if ($membreteImagePath !== null && is_file($membreteImagePath)) {
+        $membreteImagePathNormalized = str_replace('\\', '/', $membreteImagePath);
         $brandHeaderHtml = '<div class="center brand"><img src="'
             . htmlspecialchars($membreteImagePathNormalized, ENT_QUOTES, 'UTF-8')
-            . '" alt="Laboratorio Leucaena" class="brand-image"></div>';
+            . '" alt="Logo del laboratorio" class="brand-image"></div>';
     }
 
     $html = '
@@ -1376,9 +1624,9 @@ if (is_logged_in() && isset($_GET['pdf'])) {
             <td style="border:1px solid #666; padding:4px 5px; text-align:center;">Firma del Director Técnico</td>
         </tr>
         <tr>
-            <td style="border:1px solid #666; padding:4px 5px; height:54px; text-align:center;">' . htmlspecialchars($localidad, ENT_QUOTES, 'UTF-8') . '</td>
+            <td style="border:1px solid #666; padding:4px 5px; height:54px; text-align:center;">' . htmlspecialchars($certificateSettings['localidad_pais'], ENT_QUOTES, 'UTF-8') . '</td>
             <td style="border:1px solid #666; padding:4px 5px; text-align:center;">' . htmlspecialchars(format_date_long_spanish((string) ($certificadoPdf['fecha_emision_certificado'] ?? '')), ENT_QUOTES, 'UTF-8') . '</td>
-            <td style="border:1px solid #666; padding:4px 5px 5px; text-align:center; vertical-align:bottom;">Ma. Eugenia Bryant M.N 16746</td>
+            <td style="border:1px solid #666; padding:4px 5px 5px; text-align:center; vertical-align:bottom;">' . htmlspecialchars($certificateSettings['firma_director_tecnico'], ENT_QUOTES, 'UTF-8') . '</td>
         </tr>
     </table>
     <div class="phone" style="text-align:center; font-size:10px; letter-spacing:1px; margin-top:6px;">TELÉFONO 2346-316003</div>
@@ -1428,7 +1676,25 @@ if (!is_logged_in()) {
 $clientes = [];
 if (is_logged_in() && ($page ?? 'dashboard') === 'clientes') {
     try {
-        $clientesStatement = db()->prepare('SELECT id_cliente, nombre_cliente, telefono_cliente, direccion_cliente, mail_cliente, cuit_cliente, created_at_cliente FROM clientes WHERE id_empresa = :id_empresa ORDER BY id_cliente DESC');
+        if (client_emails_table_exists()) {
+            $clientesStatement = db()->prepare(
+                'SELECT c.id_cliente, c.nombre_cliente, c.telefono_cliente, c.direccion_cliente, c.cuit_cliente, c.created_at_cliente,
+                        GROUP_CONCAT(ce.email_cliente ORDER BY ce.principal_email DESC, ce.id_email_cliente ASC SEPARATOR ", ") AS emails_cliente
+                 FROM clientes c
+                 LEFT JOIN cliente_emails ce ON ce.id_cliente = c.id_cliente AND ce.id_empresa = c.id_empresa AND ce.activo_email = 1
+                 WHERE c.id_empresa = :id_empresa
+                 GROUP BY c.id_cliente, c.nombre_cliente, c.telefono_cliente, c.direccion_cliente, c.cuit_cliente, c.created_at_cliente
+                 ORDER BY c.id_cliente DESC'
+            );
+        } else {
+            $clientesStatement = db()->prepare(
+                'SELECT id_cliente, nombre_cliente, telefono_cliente, direccion_cliente, cuit_cliente, created_at_cliente,
+                        mail_cliente AS emails_cliente
+                 FROM clientes
+                 WHERE id_empresa = :id_empresa
+                 ORDER BY id_cliente DESC'
+            );
+        }
         $clientesStatement->execute([':id_empresa' => current_empresa_id()]);
         $clientes = $clientesStatement->fetchAll();
     } catch (Throwable $throwable) {
@@ -1448,8 +1714,30 @@ if (is_logged_in() && ($page ?? 'dashboard') === 'clientes' && isset($_GET['edit
                 $clientForm['nombre_cliente'] = (string) ($editRow['nombre_cliente'] ?? '');
                 $clientForm['telefono_cliente'] = (string) ($editRow['telefono_cliente'] ?? '');
                 $clientForm['direccion_cliente'] = (string) ($editRow['direccion_cliente'] ?? '');
-                $clientForm['mail_cliente'] = (string) ($editRow['mail_cliente'] ?? '');
                 $clientForm['cuit_cliente'] = (string) ($editRow['cuit_cliente'] ?? '');
+
+                if (client_emails_table_exists()) {
+                    $emailsStatement = db()->prepare(
+                        'SELECT email_cliente FROM cliente_emails
+                         WHERE id_cliente = :id_cliente AND id_empresa = :id_empresa AND activo_email = 1
+                         ORDER BY principal_email DESC, id_email_cliente ASC'
+                    );
+                    $emailsStatement->execute([
+                        ':id_cliente' => $clientEditId,
+                        ':id_empresa' => current_empresa_id(),
+                    ]);
+                    $clientForm['emails_cliente'] = array_values(array_filter(array_map(
+                        static fn($email) => trim((string) $email),
+                        $emailsStatement->fetchAll(PDO::FETCH_COLUMN)
+                    ), static fn($email) => $email !== ''));
+                } else {
+                    $singleEmail = trim((string) ($editRow['mail_cliente'] ?? ''));
+                    $clientForm['emails_cliente'] = $singleEmail !== '' ? [$singleEmail] : [];
+                }
+
+                if ($clientForm['emails_cliente'] === []) {
+                    $clientForm['emails_cliente'] = [''];
+                }
             }
         } catch (Throwable $throwable) {
             $errors[] = 'No se pudo cargar el cliente para edición.';
@@ -1845,18 +2133,7 @@ $loggedUser = $_SESSION['user']['name'] ?? 'Usuario';
 
                 <main class="content-area">
                     <?php if ($page === 'dashboard'): ?>
-                        <section class="hero-panel">
-                            <div>
-                                <h2>Panel de trabajo</h2>
-                                <p>Accede rápidamente a la administración del laboratorio y a la emisión de certificados.</p>
-                            </div>
-                            <div class="hero-badge"><i class="bi bi-shield-check"></i> PHP 8 + Bootstrap</div>
-                        </section>
-                        <section class="grid-cards">
-                            <?php echo render_card('Clientes', 'Alta, edición y consulta de clientes del laboratorio.'); ?>
-                            <?php echo render_card('Especies', 'Listado y mantenimiento del catálogo de especies.'); ?>
-                            <?php echo render_card('Certificados', 'Ingreso y preparación de Certificado general.'); ?>
-                        </section>
+
                     <?php elseif ($page === 'clientes'): ?>
                         <section class="section-panel">
                             <?php if ($clientEditId !== null): ?>
@@ -1904,8 +2181,16 @@ $loggedUser = $_SESSION['user']['name'] ?? 'Usuario';
                                 </div>
 
                                 <div class="col-12">
-                                    <label for="mail_cliente" class="form-label">Email</label>
-                                    <input type="email" class="form-control" id="mail_cliente" name="mail_cliente" maxlength="150" value="<?php echo htmlspecialchars($clientForm['mail_cliente'], ENT_QUOTES, 'UTF-8'); ?>">
+                                    <label class="form-label">Emails</label>
+                                    <div id="cliente-emails-list">
+                                        <?php foreach (($clientForm['emails_cliente'] ?? ['']) as $emailCliente): ?>
+                                            <div class="input-group mb-2 cliente-email-row">
+                                                <input type="email" class="form-control" name="emails_cliente[]" maxlength="150" value="<?php echo htmlspecialchars((string) $emailCliente, ENT_QUOTES, 'UTF-8'); ?>" placeholder="email@dominio.com">
+                                                <button type="button" class="btn btn-outline-danger cliente-email-remove">Quitar</button>
+                                            </div>
+                                        <?php endforeach; ?>
+                                    </div>
+                                    <button type="button" class="btn btn-sm btn-outline-brand" id="cliente-email-add">Agregar email</button>
                                 </div>
 
                                 <div class="col-12 d-flex gap-2">
@@ -1927,7 +2212,7 @@ $loggedUser = $_SESSION['user']['name'] ?? 'Usuario';
                                             <th>Nombre</th>
                                             <th>Teléfono</th>
                                             <th>Dirección</th>
-                                            <th>Email</th>
+                                            <th>Emails</th>
                                             <th>CUIT</th>
                                             <th>Alta</th>
                                             <th>Acciones</th>
@@ -1945,7 +2230,7 @@ $loggedUser = $_SESSION['user']['name'] ?? 'Usuario';
                                                     <td><?php echo htmlspecialchars((string) $cliente['nombre_cliente'], ENT_QUOTES, 'UTF-8'); ?></td>
                                                     <td><?php echo htmlspecialchars((string) ($cliente['telefono_cliente'] ?? ''), ENT_QUOTES, 'UTF-8'); ?></td>
                                                     <td><?php echo htmlspecialchars((string) ($cliente['direccion_cliente'] ?? ''), ENT_QUOTES, 'UTF-8'); ?></td>
-                                                    <td><?php echo htmlspecialchars((string) ($cliente['mail_cliente'] ?? ''), ENT_QUOTES, 'UTF-8'); ?></td>
+                                                    <td><?php echo htmlspecialchars((string) ($cliente['emails_cliente'] ?? ''), ENT_QUOTES, 'UTF-8'); ?></td>
                                                     <td><?php echo htmlspecialchars((string) ($cliente['cuit_cliente'] ?? ''), ENT_QUOTES, 'UTF-8'); ?></td>
                                                     <td><?php echo htmlspecialchars((string) ($cliente['created_at_cliente'] ?? ''), ENT_QUOTES, 'UTF-8'); ?></td>
                                                     <td class="text-nowrap">
@@ -2318,13 +2603,58 @@ $loggedUser = $_SESSION['user']['name'] ?? 'Usuario';
                     <?php elseif ($page === 'configuracion'): ?>
                         <section class="section-panel">
                             <h2>Configuración</h2>
-                            <p>Información de tu laboratorio en el sistema.</p>
+                            <p>Administrá el logo que se imprime en los certificados de este laboratorio.</p>
 
                             <?php foreach ($errors as $error): ?>
                                 <div class="alert alert-danger"><?php echo htmlspecialchars($error, ENT_QUOTES, 'UTF-8'); ?></div>
                             <?php endforeach; ?>
 
-                            <dl class="row mb-0">
+                            <?php if ($successMessage !== null): ?>
+                                <div class="alert alert-success"><?php echo htmlspecialchars($successMessage, ENT_QUOTES, 'UTF-8'); ?></div>
+                            <?php endif; ?>
+
+                            <?php $certificateLogoPath = certificate_logo_path(current_empresa_id()); ?>
+                            <form method="post" enctype="multipart/form-data" class="row g-3 mt-1">
+                                <input type="hidden" name="save_logo_certificado" value="1">
+                                <div class="col-md-8">
+                                    <label for="logo_certificado" class="form-label">Logo para certificados</label>
+                                    <input class="form-control" type="file" id="logo_certificado" name="logo_certificado" accept="image/png,image/jpeg,image/webp" required>
+                                    <div class="form-text">Formatos admitidos: PNG, JPG o WebP. Tamaño máximo: 5 MB.</div>
+                                </div>
+                                <div class="col-md-4 d-flex align-items-end">
+                                    <button type="submit" class="btn btn-brand">Guardar logo</button>
+                                </div>
+                            </form>
+
+                            <?php if ($certificateLogoPath !== null): ?>
+                                <div class="d-flex align-items-center gap-2 mt-3">
+                                    <span class="badge bg-success">Logo personalizado activo</span>
+                                    <form method="post" onsubmit="return confirm('¿Quitar el logo personalizado del certificado?')">
+                                        <input type="hidden" name="delete_logo_certificado" value="1">
+                                        <button type="submit" class="btn btn-sm btn-outline-danger">Quitar logo</button>
+                                    </form>
+                                </div>
+                            <?php else: ?>
+                                <p class="text-muted small mt-3 mb-0">No hay logo configurado. El certificado se emitirá sin logo.</p>
+                            <?php endif; ?>
+
+                            <?php $certificateSettings = get_certificate_settings(current_empresa_id()); ?>
+                            <form method="post" class="row g-3 mt-4">
+                                <input type="hidden" name="save_datos_certificado" value="1">
+                                <div class="col-md-6">
+                                    <label for="localidad_pais_certificado" class="form-label">Localidad y País</label>
+                                    <input type="text" class="form-control" id="localidad_pais_certificado" name="localidad_pais_certificado" maxlength="255" value="<?php echo htmlspecialchars($certificateSettings['localidad_pais'], ENT_QUOTES, 'UTF-8'); ?>">
+                                </div>
+                                <div class="col-md-6">
+                                    <label for="firma_director_tecnico" class="form-label">Firma del Director Técnico</label>
+                                    <input type="text" class="form-control" id="firma_director_tecnico" name="firma_director_tecnico" maxlength="255" value="<?php echo htmlspecialchars($certificateSettings['firma_director_tecnico'], ENT_QUOTES, 'UTF-8'); ?>">
+                                </div>
+                                <div class="col-12">
+                                    <button type="submit" class="btn btn-brand">Guardar datos del certificado</button>
+                                </div>
+                            </form>
+
+                            <dl class="row mt-4 mb-0">
                                 <dt class="col-sm-4">Carpeta de guardado de certificados</dt>
                                 <dd class="col-sm-8"><?php echo htmlspecialchars(empresa_storage_dir(current_empresa_id()), ENT_QUOTES, 'UTF-8'); ?></dd>
                             </dl>
@@ -2586,27 +2916,27 @@ $loggedUser = $_SESSION['user']['name'] ?? 'Usuario';
 
                                     <div class="col-md-2">
                                         <label for="pg_numero_dias_certificado" class="form-label">Días</label>
-                                        <input type="number" class="form-control" id="pg_numero_dias_certificado" name="pg_numero_dias_certificado" value="<?php echo htmlspecialchars($certForm['pg_numero_dias_certificado'], ENT_QUOTES, 'UTF-8'); ?>">
+                                        <input type="number" step="1" class="form-control" id="pg_numero_dias_certificado" name="pg_numero_dias_certificado" value="<?php echo htmlspecialchars($certForm['pg_numero_dias_certificado'], ENT_QUOTES, 'UTF-8'); ?>">
                                     </div>
 
                                     <div class="col-md-2">
                                         <label for="pg_plantulas_normales_certificado" class="form-label">Plántulas normales</label>
-                                        <input type="number" class="form-control" id="pg_plantulas_normales_certificado" name="pg_plantulas_normales_certificado" step="0.01" value="<?php echo htmlspecialchars($certForm['pg_plantulas_normales_certificado'], ENT_QUOTES, 'UTF-8'); ?>">
+                                        <input type="number" step="1" class="form-control" id="pg_plantulas_normales_certificado" name="pg_plantulas_normales_certificado" step="0.01" value="<?php echo htmlspecialchars($certForm['pg_plantulas_normales_certificado'], ENT_QUOTES, 'UTF-8'); ?>">
                                     </div>
 
                                     <div class="col-md-2">
                                         <label for="pg_semillas_duras_certificado" class="form-label">Semillas duras</label>
-                                        <input type="number" class="form-control" id="pg_semillas_duras_certificado" name="pg_semillas_duras_certificado" step="0.01" value="<?php echo htmlspecialchars($certForm['pg_semillas_duras_certificado'], ENT_QUOTES, 'UTF-8'); ?>">
+                                        <input type="number" step="1" class="form-control" id="pg_semillas_duras_certificado" name="pg_semillas_duras_certificado" step="0.01" value="<?php echo htmlspecialchars($certForm['pg_semillas_duras_certificado'], ENT_QUOTES, 'UTF-8'); ?>">
                                     </div>
 
                                     <div class="col-md-2">
                                         <label for="pg_semillas_frescas_certificado" class="form-label">Semillas frescas</label>
-                                        <input type="number" class="form-control" id="pg_semillas_frescas_certificado" name="pg_semillas_frescas_certificado" step="0.01" value="<?php echo htmlspecialchars($certForm['pg_semillas_frescas_certificado'], ENT_QUOTES, 'UTF-8'); ?>">
+                                        <input type="number" step="1" class="form-control" id="pg_semillas_frescas_certificado" name="pg_semillas_frescas_certificado" step="0.01" value="<?php echo htmlspecialchars($certForm['pg_semillas_frescas_certificado'], ENT_QUOTES, 'UTF-8'); ?>">
                                     </div>
 
                                     <div class="col-md-2">
                                         <label for="pg_plantulas_anormales_certificado" class="form-label">Plántulas anormales</label>
-                                        <input type="number" class="form-control" id="pg_plantulas_anormales_certificado" name="pg_plantulas_anormales_certificado" step="0.01" value="<?php echo htmlspecialchars($certForm['pg_plantulas_anormales_certificado'], ENT_QUOTES, 'UTF-8'); ?>">
+                                        <input type="number" step="1" class="form-control" id="pg_plantulas_anormales_certificado" name="pg_plantulas_anormales_certificado" step="0.01" value="<?php echo htmlspecialchars($certForm['pg_plantulas_anormales_certificado'], ENT_QUOTES, 'UTF-8'); ?>">
                                     </div>
 
                                     <div class="col-md-2">
@@ -2616,7 +2946,7 @@ $loggedUser = $_SESSION['user']['name'] ?? 'Usuario';
 
                                     <div class="col-12">
                                         <label for="pg_contenido_humedad_certificado" class="form-label">Contenido humedad (%)</label>
-                                        <input type="number" class="form-control" id="pg_contenido_humedad_certificado" name="pg_contenido_humedad_certificado" step="0.01" value="<?php echo htmlspecialchars($certForm['pg_contenido_humedad_certificado'], ENT_QUOTES, 'UTF-8'); ?>">
+                                        <input type="number" step="1" class="form-control" id="pg_contenido_humedad_certificado" name="pg_contenido_humedad_certificado" step="0.01" value="<?php echo htmlspecialchars($certForm['pg_contenido_humedad_certificado'], ENT_QUOTES, 'UTF-8'); ?>">
                                     </div>
 
                                     <hr class="my-4">
@@ -2624,32 +2954,32 @@ $loggedUser = $_SESSION['user']['name'] ?? 'Usuario';
 
                                     <div class="col-md-2">
                                         <label for="pgc_numero_dias_certificado" class="form-label">Días</label>
-                                        <input type="number" class="form-control" id="pgc_numero_dias_certificado" name="pgc_numero_dias_certificado" value="<?php echo htmlspecialchars($certForm['pgc_numero_dias_certificado'], ENT_QUOTES, 'UTF-8'); ?>">
+                                        <input type="number" step="1" class="form-control" id="pgc_numero_dias_certificado" name="pgc_numero_dias_certificado" value="<?php echo htmlspecialchars($certForm['pgc_numero_dias_certificado'], ENT_QUOTES, 'UTF-8'); ?>">
                                     </div>
 
                                     <div class="col-md-2">
                                         <label for="pgc_plantulas_normales_certificado" class="form-label">Plántulas normales</label>
-                                        <input type="number" class="form-control" id="pgc_plantulas_normales_certificado" name="pgc_plantulas_normales_certificado" step="0.01" value="<?php echo htmlspecialchars($certForm['pgc_plantulas_normales_certificado'], ENT_QUOTES, 'UTF-8'); ?>">
+                                        <input type="number" step="1" class="form-control" id="pgc_plantulas_normales_certificado" name="pgc_plantulas_normales_certificado" step="0.01" value="<?php echo htmlspecialchars($certForm['pgc_plantulas_normales_certificado'], ENT_QUOTES, 'UTF-8'); ?>">
                                     </div>
 
                                     <div class="col-md-2">
                                         <label for="pgc_semillas_duras_certificado" class="form-label">Semillas duras</label>
-                                        <input type="number" class="form-control" id="pgc_semillas_duras_certificado" name="pgc_semillas_duras_certificado" step="0.01" value="<?php echo htmlspecialchars($certForm['pgc_semillas_duras_certificado'], ENT_QUOTES, 'UTF-8'); ?>">
+                                        <input type="number" step="1" class="form-control" id="pgc_semillas_duras_certificado" name="pgc_semillas_duras_certificado" step="0.01" value="<?php echo htmlspecialchars($certForm['pgc_semillas_duras_certificado'], ENT_QUOTES, 'UTF-8'); ?>">
                                     </div>
 
                                     <div class="col-md-2">
                                         <label for="pgc_semillas_frescas_certificado" class="form-label">Semillas frescas</label>
-                                        <input type="number" class="form-control" id="pgc_semillas_frescas_certificado" name="pgc_semillas_frescas_certificado" step="0.01" value="<?php echo htmlspecialchars($certForm['pgc_semillas_frescas_certificado'], ENT_QUOTES, 'UTF-8'); ?>">
+                                        <input type="number" step="1" class="form-control" id="pgc_semillas_frescas_certificado" name="pgc_semillas_frescas_certificado" step="0.01" value="<?php echo htmlspecialchars($certForm['pgc_semillas_frescas_certificado'], ENT_QUOTES, 'UTF-8'); ?>">
                                     </div>
 
                                     <div class="col-md-2">
                                         <label for="pgc_plantulas_anormales_certificado" class="form-label">Plántulas anormales</label>
-                                        <input type="number" class="form-control" id="pgc_plantulas_anormales_certificado" name="pgc_plantulas_anormales_certificado" step="0.01" value="<?php echo htmlspecialchars($certForm['pgc_plantulas_anormales_certificado'], ENT_QUOTES, 'UTF-8'); ?>">
+                                        <input type="number" step="1" class="form-control" id="pgc_plantulas_anormales_certificado" name="pgc_plantulas_anormales_certificado" step="0.01" value="<?php echo htmlspecialchars($certForm['pgc_plantulas_anormales_certificado'], ENT_QUOTES, 'UTF-8'); ?>">
                                     </div>
 
                                     <div class="col-md-2">
                                         <label for="pgc_semillas_muertas_certificado" class="form-label">Semillas muertas</label>
-                                        <input type="number" class="form-control" id="pgc_semillas_muertas_certificado" name="pgc_semillas_muertas_certificado" step="0.01" value="<?php echo htmlspecialchars($certForm['pgc_semillas_muertas_certificado'], ENT_QUOTES, 'UTF-8'); ?>">
+                                        <input type="number" step="1" class="form-control" id="pgc_semillas_muertas_certificado" name="pgc_semillas_muertas_certificado" step="0.01" value="<?php echo htmlspecialchars($certForm['pgc_semillas_muertas_certificado'], ENT_QUOTES, 'UTF-8'); ?>">
                                     </div>
 
                                     <hr class="my-4">
@@ -2662,19 +2992,19 @@ $loggedUser = $_SESSION['user']['name'] ?? 'Usuario';
 
                                     <div class="col-md-6">
                                         <label for="vigor_plantulas_normales_certificado" class="form-label">Plántulas normales</label>
-                                        <input type="number" class="form-control" id="vigor_plantulas_normales_certificado" name="vigor_plantulas_normales_certificado" step="0.01" value="<?php echo htmlspecialchars($certForm['vigor_plantulas_normales_certificado'], ENT_QUOTES, 'UTF-8'); ?>">
+                                        <input type="number" step="1" class="form-control" id="vigor_plantulas_normales_certificado" name="vigor_plantulas_normales_certificado" step="0.01" value="<?php echo htmlspecialchars($certForm['vigor_plantulas_normales_certificado'], ENT_QUOTES, 'UTF-8'); ?>">
                                     </div>
 
                                     <hr class="my-4">
 
                                     <div class="col-md-6">
                                         <label for="clase_materia_inerte_certificado" class="form-label">Clase de Materia Inerte</label>
-                                        <input type="text" class="form-control" id="clase_materia_inerte_certificado" name="clase_materia_inerte_certificado" maxlength="100" value="<?php echo htmlspecialchars($certForm['clase_materia_inerte_certificado'], ENT_QUOTES, 'UTF-8'); ?>">
+                                        <input type="text" step="1" class="form-control" id="clase_materia_inerte_certificado" name="clase_materia_inerte_certificado" maxlength="100" value="<?php echo htmlspecialchars($certForm['clase_materia_inerte_certificado'], ENT_QUOTES, 'UTF-8'); ?>">
                                     </div>
 
                                     <div class="col-md-6">
                                         <label for="otras_semillas_certificado" class="form-label">Otras semillas</label>
-                                        <input type="text" class="form-control" id="otras_semillas_certificado" name="otras_semillas_certificado" value="<?php echo htmlspecialchars($certForm['otras_semillas_certificado'], ENT_QUOTES, 'UTF-8'); ?>">
+                                        <input type="text" step="1" class="form-control" id="otras_semillas_certificado" name="otras_semillas_certificado" value="<?php echo htmlspecialchars($certForm['otras_semillas_certificado'], ENT_QUOTES, 'UTF-8'); ?>">
                                     </div>
 
                                     <hr class="my-4">
@@ -2704,13 +3034,7 @@ $loggedUser = $_SESSION['user']['name'] ?? 'Usuario';
                                         </select>
                                     </div>
 
-                                    <div class="col-10">
-                                        <label for="localidad_pais_certificado" class="form-label">Localidad/País</label>
-                                        <input type="text" class="form-control" id="localidad_pais_certificado" name="localidad_pais_certificado" maxlength="255"
-                                            value="<?php echo htmlspecialchars(!empty($certForm['localidad_pais_certificado']) ? $certForm['localidad_pais_certificado'] : 'Chivilcoy, Buenos Aires', ENT_QUOTES, 'UTF-8'); ?>">
-                                    </div>
-
-                                    <div class="col-2">
+                                    <div class="col-md-3">
                                         <label for="fecha_emision_certificado" class="form-label">Fecha de emisión</label>
                                         <input type="date" class="form-control" id="fecha_emision_certificado" name="fecha_emision_certificado"
                                             value="<?php echo htmlspecialchars(!empty($certForm['fecha_emision_certificado']) ? $certForm['fecha_emision_certificado'] : date('Y-m-d'), ENT_QUOTES, 'UTF-8'); ?>">
@@ -2852,9 +3176,8 @@ $loggedUser = $_SESSION['user']['name'] ?? 'Usuario';
         function filterCultivares() {
             const especieSelect = document.getElementById('id_especie_certificado');
             const cultivarSelect = document.getElementById('id_cultivar_certificado');
+            if (!especieSelect || !cultivarSelect) return;
             const especieValue = especieSelect.value;
-
-            if (!cultivarSelect) return;
 
             const options = cultivarSelect.querySelectorAll('option');
             options.forEach(option => {
@@ -2871,12 +3194,6 @@ $loggedUser = $_SESSION['user']['name'] ?? 'Usuario';
             // Resetear el select al cambiar de especie
             cultivarSelect.value = '';
         };
-
-        // Reset selection if current value is hidden
-        const selectedOption = cultivarSelect.options[cultivarSelect.selectedIndex];
-        if (selectedOption && selectedOption.style.display === 'none') {
-            cultivarSelect.value = '';
-        }
 
         // Filter on page load
         document.addEventListener('DOMContentLoaded', filterCultivares);
@@ -2982,6 +3299,48 @@ $loggedUser = $_SESSION['user']['name'] ?? 'Usuario';
             'pgc_plantulas_anormales_certificado',
             'pgc_semillas_muertas_certificado'
         ], 100, 'Poder Germinativo Curado');
+
+        function initClienteEmails() {
+            const emailList = document.getElementById('cliente-emails-list');
+            const addButton = document.getElementById('cliente-email-add');
+            if (!emailList || !addButton) return;
+
+            const addEmailRow = (value = '') => {
+                const row = document.createElement('div');
+                row.className = 'input-group mb-2 cliente-email-row';
+                row.innerHTML = '<input type="email" class="form-control" name="emails_cliente[]" maxlength="150" placeholder="email@dominio.com">'
+                    + '<button type="button" class="btn btn-outline-danger cliente-email-remove">Quitar</button>';
+                row.querySelector('input').value = value;
+                emailList.appendChild(row);
+            };
+
+            addButton.addEventListener('click', function() {
+                addEmailRow('');
+            });
+
+            emailList.addEventListener('click', function(event) {
+                const button = event.target.closest('.cliente-email-remove');
+                if (!button) return;
+
+                const row = button.closest('.cliente-email-row');
+                if (!row) return;
+
+                if (emailList.querySelectorAll('.cliente-email-row').length <= 1) {
+                    const input = row.querySelector('input');
+                    if (input) input.value = '';
+                    return;
+                }
+
+                row.remove();
+            });
+
+            const rows = emailList.querySelectorAll('.cliente-email-row');
+            if (rows.length === 0) {
+                addEmailRow('');
+            }
+        }
+
+        document.addEventListener('DOMContentLoaded', initClienteEmails);
 
         // Prevenir que Enter guarde el formulario
         document.addEventListener('DOMContentLoaded', function() {
