@@ -318,35 +318,39 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['login'])) {
     $username = trim((string) ($_POST['username'] ?? ''));
     $password = (string) ($_POST['password'] ?? '');
 
-    $userStatement = db()->prepare(
-        'SELECT u.id_usuario, u.nombre_usuario, u.username_usuario, u.password_hash_usuario, u.activo_usuario, u.es_superadmin, u.id_empresa, e.activo_empresa, e.nombre_empresa
-        FROM usuarios u
-        INNER JOIN empresas e ON e.id_empresa = u.id_empresa
-        WHERE u.username_usuario = :username LIMIT 1'
-    );
-    $userStatement->execute([':username' => $username]);
-    $userRow = $userStatement->fetch();
+    try {
+        $userStatement = db()->prepare(
+            'SELECT u.id_usuario, u.nombre_usuario, u.username_usuario, u.password_hash_usuario, u.activo_usuario, u.es_superadmin, u.id_empresa, e.activo_empresa, e.nombre_empresa
+            FROM usuarios u
+            INNER JOIN empresas e ON e.id_empresa = u.id_empresa
+            WHERE u.username_usuario = :username LIMIT 1'
+        );
+        $userStatement->execute([':username' => $username]);
+        $userRow = $userStatement->fetch();
 
-    if (
-        $userRow !== false
-        && (int) $userRow['activo_usuario'] === 1
-        && (int) $userRow['activo_empresa'] === 1
-        && password_verify($password, $userRow['password_hash_usuario'])
-    ) {
-        session_regenerate_id(true);
-        $_SESSION['user'] = [
-            'id' => (int) $userRow['id_usuario'],
-            'username' => $userRow['username_usuario'],
-            'name' => $userRow['nombre_usuario'],
-            'id_empresa' => (int) $userRow['id_empresa'],
-            'empresa_nombre' => $userRow['nombre_empresa'],
-            'es_superadmin' => (bool) $userRow['es_superadmin'],
-        ];
-        header('Location: /index.php');
-        exit;
+        if (
+            $userRow !== false
+            && (int) $userRow['activo_usuario'] === 1
+            && (int) $userRow['activo_empresa'] === 1
+            && password_verify($password, $userRow['password_hash_usuario'])
+        ) {
+            session_regenerate_id(true);
+            $_SESSION['user'] = [
+                'id' => (int) $userRow['id_usuario'],
+                'username' => $userRow['username_usuario'],
+                'name' => $userRow['nombre_usuario'],
+                'id_empresa' => (int) $userRow['id_empresa'],
+                'empresa_nombre' => $userRow['nombre_empresa'],
+                'es_superadmin' => (bool) $userRow['es_superadmin'],
+            ];
+            header('Location: /index.php');
+            exit;
+        }
+
+        $errors[] = 'Usuario o contraseña incorrectos.';
+    } catch (Throwable $throwable) {
+        $errors[] = 'No fue posible iniciar sesión. Verifica la configuración de base de datos del servidor.';
     }
-
-    $errors[] = 'Usuario o contraseña incorrectos.';
 }
 
 if (is_logged_in() && $_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['save_logo_certificado'])) {
@@ -3308,8 +3312,8 @@ $loggedUser = $_SESSION['user']['name'] ?? 'Usuario';
             const addEmailRow = (value = '') => {
                 const row = document.createElement('div');
                 row.className = 'input-group mb-2 cliente-email-row';
-                row.innerHTML = '<input type="email" class="form-control" name="emails_cliente[]" maxlength="150" placeholder="email@dominio.com">'
-                    + '<button type="button" class="btn btn-outline-danger cliente-email-remove">Quitar</button>';
+                row.innerHTML = '<input type="email" class="form-control" name="emails_cliente[]" maxlength="150" placeholder="email@dominio.com">' +
+                    '<button type="button" class="btn btn-outline-danger cliente-email-remove">Quitar</button>';
                 row.querySelector('input').value = value;
                 emailList.appendChild(row);
             };
