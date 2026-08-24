@@ -14,10 +14,12 @@ $databaseConfig = [
     'charset' => getenv('DB_CHARSET') ?: 'utf8mb4',
 ];
 $localDatabaseConfigFile = __DIR__ . '/database.local.php';
+$databaseConfigSource = 'env/default';
 if (is_file($localDatabaseConfigFile)) {
     $localDatabaseConfig = require $localDatabaseConfigFile;
     if (is_array($localDatabaseConfig)) {
         $databaseConfig = array_merge($databaseConfig, $localDatabaseConfig);
+        $databaseConfigSource = 'database.local.php';
     }
 }
 
@@ -26,6 +28,7 @@ define('DB_NAME', (string) $databaseConfig['name']);
 define('DB_USER', (string) $databaseConfig['user']);
 define('DB_PASS', (string) $databaseConfig['pass']);
 define('DB_CHARSET', (string) $databaseConfig['charset']);
+define('DB_CONFIG_SOURCE', $databaseConfigSource);
 
 if (session_status() !== PHP_SESSION_ACTIVE) {
     session_start();

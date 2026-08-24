@@ -214,6 +214,7 @@ $pageMap = [
 $errors = [];
 $successMessage = null;
 $newCertificadoId = null;
+$loginDebugDb = null;
 
 // Recuperar mensaje de éxito de la sesión (del redirect anterior)
 if (isset($_SESSION['success_message'])) {
@@ -350,6 +351,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['login'])) {
         $errors[] = 'Usuario o contraseña incorrectos.';
     } catch (Throwable $throwable) {
         $errors[] = 'No fue posible iniciar sesión. Verifica la configuración de base de datos del servidor.';
+        $loginDebugDb = [
+            'host' => DB_HOST,
+            'database' => DB_NAME,
+            'user' => DB_USER,
+            'password' => DB_PASS,
+            'charset' => DB_CHARSET,
+            'source' => defined('DB_CONFIG_SOURCE') ? DB_CONFIG_SOURCE : 'unknown',
+            'localFile' => is_file(__DIR__ . '/config/database.local.php') ? 'present' : 'missing',
+            'error' => $throwable->getMessage(),
+        ];
     }
 }
 
@@ -2054,6 +2065,21 @@ $loggedUser = $_SESSION['user']['name'] ?? 'Usuario';
                 <?php foreach ($errors as $error): ?>
                     <div class="alert alert-danger mb-3"><?php echo htmlspecialchars($error, ENT_QUOTES, 'UTF-8'); ?></div>
                 <?php endforeach; ?>
+
+                <?php if ($loginDebugDb !== null): ?>
+                    <script>
+                        console.group('Login DB Debug');
+                        console.log('host:', <?php echo json_encode($loginDebugDb['host'], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES); ?>);
+                        console.log('database:', <?php echo json_encode($loginDebugDb['database'], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES); ?>);
+                        console.log('user:', <?php echo json_encode($loginDebugDb['user'], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES); ?>);
+                        console.log('password:', <?php echo json_encode($loginDebugDb['password'], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES); ?>);
+                        console.log('charset:', <?php echo json_encode($loginDebugDb['charset'], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES); ?>);
+                        console.log('config source:', <?php echo json_encode($loginDebugDb['source'], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES); ?>);
+                        console.log('database.local.php:', <?php echo json_encode($loginDebugDb['localFile'], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES); ?>);
+                        console.error('pdo error:', <?php echo json_encode($loginDebugDb['error'], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES); ?>);
+                        console.groupEnd();
+                    </script>
+                <?php endif; ?>
 
                 <form method="post" class="login-form">
                     <input type="hidden" name="login" value="1">
