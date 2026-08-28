@@ -228,6 +228,8 @@ $clientForm = [
     'nombre_cliente' => '',
     'telefono_cliente' => '',
     'direccion_cliente' => '',
+    'localidad_cliente' => '',
+    'provincia_cliente' => '',
     'emails_cliente' => [''],
     'cuit_cliente' => '',
 ];
@@ -355,9 +357,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['login'])) {
 
 if (is_logged_in() && $_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['save_logo_certificado'])) {
     $logoUpload = $_FILES['logo_certificado'] ?? null;
+    $uploadError = is_array($logoUpload) ? (int) ($logoUpload['error'] ?? UPLOAD_ERR_NO_FILE) : UPLOAD_ERR_NO_FILE;
 
-    if (!is_array($logoUpload) || ($logoUpload['error'] ?? UPLOAD_ERR_NO_FILE) !== UPLOAD_ERR_OK) {
-        $errors[] = 'Debes seleccionar una imagen para el logo.';
+    if (!is_array($logoUpload) || $uploadError !== UPLOAD_ERR_OK) {
+        if ($uploadError === UPLOAD_ERR_NO_FILE) {
+            $errors[] = 'Debes seleccionar una imagen para el logo.';
+        } elseif ($uploadError === UPLOAD_ERR_INI_SIZE || $uploadError === UPLOAD_ERR_FORM_SIZE) {
+            $errors[] = 'El servidor rechazó el archivo por tamaño. Reduce la imagen o aumenta upload_max_filesize/post_max_size en PHP.';
+        } else {
+            $errors[] = 'No fue posible recibir el archivo (código de carga: ' . $uploadError . ').';
+        }
     } elseif ((int) ($logoUpload['size'] ?? 0) > 5 * 1024 * 1024) {
         $errors[] = 'El logo no puede superar los 5 MB.';
     } elseif (!is_uploaded_file((string) ($logoUpload['tmp_name'] ?? ''))) {
@@ -519,6 +528,8 @@ if (is_logged_in() && $_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['sav
     $clientForm['nombre_cliente'] = trim((string) ($_POST['nombre_cliente'] ?? ''));
     $clientForm['telefono_cliente'] = trim((string) ($_POST['telefono_cliente'] ?? ''));
     $clientForm['direccion_cliente'] = trim((string) ($_POST['direccion_cliente'] ?? ''));
+    $clientForm['localidad_cliente'] = trim((string) ($_POST['localidad_cliente'] ?? ''));
+    $clientForm['provincia_cliente'] = trim((string) ($_POST['provincia_cliente'] ?? ''));
     $clientForm['emails_cliente'] = normalize_client_emails($_POST['emails_cliente'] ?? []);
     $clientForm['cuit_cliente'] = trim((string) ($_POST['cuit_cliente'] ?? ''));
 
@@ -549,24 +560,28 @@ if (is_logged_in() && $_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['sav
 
             if (client_emails_table_exists()) {
                 $statement = db()->prepare(
-                    'INSERT INTO clientes (id_empresa, nombre_cliente, telefono_cliente, direccion_cliente, cuit_cliente) VALUES (:id_empresa, :nombre_cliente, :telefono_cliente, :direccion_cliente, :cuit_cliente)'
+                    'INSERT INTO clientes (id_empresa, nombre_cliente, telefono_cliente, direccion_cliente, localidad_cliente, provincia_cliente, cuit_cliente) VALUES (:id_empresa, :nombre_cliente, :telefono_cliente, :direccion_cliente, :localidad_cliente, :provincia_cliente, :cuit_cliente)'
                 );
                 $statement->execute([
                     ':id_empresa' => current_empresa_id(),
                     ':nombre_cliente' => $clientForm['nombre_cliente'],
                     ':telefono_cliente' => $clientForm['telefono_cliente'] !== '' ? $clientForm['telefono_cliente'] : null,
                     ':direccion_cliente' => $clientForm['direccion_cliente'] !== '' ? $clientForm['direccion_cliente'] : null,
+                    ':localidad_cliente' => $clientForm['localidad_cliente'] !== '' ? $clientForm['localidad_cliente'] : null,
+                    ':provincia_cliente' => $clientForm['provincia_cliente'] !== '' ? $clientForm['provincia_cliente'] : null,
                     ':cuit_cliente' => $clientForm['cuit_cliente'] !== '' ? $clientForm['cuit_cliente'] : null,
                 ]);
             } else {
                 $statement = db()->prepare(
-                    'INSERT INTO clientes (id_empresa, nombre_cliente, telefono_cliente, direccion_cliente, mail_cliente, cuit_cliente) VALUES (:id_empresa, :nombre_cliente, :telefono_cliente, :direccion_cliente, :mail_cliente, :cuit_cliente)'
+                    'INSERT INTO clientes (id_empresa, nombre_cliente, telefono_cliente, direccion_cliente, localidad_cliente, provincia_cliente, mail_cliente, cuit_cliente) VALUES (:id_empresa, :nombre_cliente, :telefono_cliente, :direccion_cliente, :localidad_cliente, :provincia_cliente, :mail_cliente, :cuit_cliente)'
                 );
                 $statement->execute([
                     ':id_empresa' => current_empresa_id(),
                     ':nombre_cliente' => $clientForm['nombre_cliente'],
                     ':telefono_cliente' => $clientForm['telefono_cliente'] !== '' ? $clientForm['telefono_cliente'] : null,
                     ':direccion_cliente' => $clientForm['direccion_cliente'] !== '' ? $clientForm['direccion_cliente'] : null,
+                    ':localidad_cliente' => $clientForm['localidad_cliente'] !== '' ? $clientForm['localidad_cliente'] : null,
+                    ':provincia_cliente' => $clientForm['provincia_cliente'] !== '' ? $clientForm['provincia_cliente'] : null,
                     ':mail_cliente' => $primaryClientEmail !== '' ? $primaryClientEmail : null,
                     ':cuit_cliente' => $clientForm['cuit_cliente'] !== '' ? $clientForm['cuit_cliente'] : null,
                 ]);
@@ -595,6 +610,8 @@ if (is_logged_in() && $_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['sav
                 'nombre_cliente' => '',
                 'telefono_cliente' => '',
                 'direccion_cliente' => '',
+                'localidad_cliente' => '',
+                'provincia_cliente' => '',
                 'emails_cliente' => [''],
                 'cuit_cliente' => '',
             ];
@@ -621,6 +638,8 @@ if (is_logged_in() && $_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['upd
     $clientForm['nombre_cliente'] = trim((string) ($_POST['nombre_cliente'] ?? ''));
     $clientForm['telefono_cliente'] = trim((string) ($_POST['telefono_cliente'] ?? ''));
     $clientForm['direccion_cliente'] = trim((string) ($_POST['direccion_cliente'] ?? ''));
+    $clientForm['localidad_cliente'] = trim((string) ($_POST['localidad_cliente'] ?? ''));
+    $clientForm['provincia_cliente'] = trim((string) ($_POST['provincia_cliente'] ?? ''));
     $clientForm['emails_cliente'] = normalize_client_emails($_POST['emails_cliente'] ?? []);
     $clientForm['cuit_cliente'] = trim((string) ($_POST['cuit_cliente'] ?? ''));
 
@@ -655,12 +674,14 @@ if (is_logged_in() && $_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['upd
 
             if (client_emails_table_exists()) {
                 $statement = db()->prepare(
-                    'UPDATE clientes SET nombre_cliente = :nombre_cliente, telefono_cliente = :telefono_cliente, direccion_cliente = :direccion_cliente, cuit_cliente = :cuit_cliente WHERE id_cliente = :id_cliente AND id_empresa = :id_empresa'
+                    'UPDATE clientes SET nombre_cliente = :nombre_cliente, telefono_cliente = :telefono_cliente, direccion_cliente = :direccion_cliente, localidad_cliente = :localidad_cliente, provincia_cliente = :provincia_cliente, cuit_cliente = :cuit_cliente WHERE id_cliente = :id_cliente AND id_empresa = :id_empresa'
                 );
                 $statement->execute([
                     ':nombre_cliente' => $clientForm['nombre_cliente'],
                     ':telefono_cliente' => $clientForm['telefono_cliente'] !== '' ? $clientForm['telefono_cliente'] : null,
                     ':direccion_cliente' => $clientForm['direccion_cliente'] !== '' ? $clientForm['direccion_cliente'] : null,
+                    ':localidad_cliente' => $clientForm['localidad_cliente'] !== '' ? $clientForm['localidad_cliente'] : null,
+                    ':provincia_cliente' => $clientForm['provincia_cliente'] !== '' ? $clientForm['provincia_cliente'] : null,
                     ':cuit_cliente' => $clientForm['cuit_cliente'] !== '' ? $clientForm['cuit_cliente'] : null,
                     ':id_cliente' => $clientEditId,
                     ':id_empresa' => current_empresa_id(),
@@ -687,12 +708,14 @@ if (is_logged_in() && $_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['upd
                 }
             } else {
                 $statement = db()->prepare(
-                    'UPDATE clientes SET nombre_cliente = :nombre_cliente, telefono_cliente = :telefono_cliente, direccion_cliente = :direccion_cliente, mail_cliente = :mail_cliente, cuit_cliente = :cuit_cliente WHERE id_cliente = :id_cliente AND id_empresa = :id_empresa'
+                    'UPDATE clientes SET nombre_cliente = :nombre_cliente, telefono_cliente = :telefono_cliente, direccion_cliente = :direccion_cliente, localidad_cliente = :localidad_cliente, provincia_cliente = :provincia_cliente, mail_cliente = :mail_cliente, cuit_cliente = :cuit_cliente WHERE id_cliente = :id_cliente AND id_empresa = :id_empresa'
                 );
                 $statement->execute([
                     ':nombre_cliente' => $clientForm['nombre_cliente'],
                     ':telefono_cliente' => $clientForm['telefono_cliente'] !== '' ? $clientForm['telefono_cliente'] : null,
                     ':direccion_cliente' => $clientForm['direccion_cliente'] !== '' ? $clientForm['direccion_cliente'] : null,
+                    ':localidad_cliente' => $clientForm['localidad_cliente'] !== '' ? $clientForm['localidad_cliente'] : null,
+                    ':provincia_cliente' => $clientForm['provincia_cliente'] !== '' ? $clientForm['provincia_cliente'] : null,
                     ':mail_cliente' => $primaryClientEmail !== '' ? $primaryClientEmail : null,
                     ':cuit_cliente' => $clientForm['cuit_cliente'] !== '' ? $clientForm['cuit_cliente'] : null,
                     ':id_cliente' => $clientEditId,
@@ -705,7 +728,7 @@ if (is_logged_in() && $_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['upd
             $successMessage = 'Cliente actualizado correctamente.';
             $_SESSION['success_message'] = $successMessage;
             $clientEditId = null;
-            $clientForm = ['nombre_cliente' => '', 'telefono_cliente' => '', 'direccion_cliente' => '', 'emails_cliente' => [''], 'cuit_cliente' => ''];
+            $clientForm = ['nombre_cliente' => '', 'telefono_cliente' => '', 'direccion_cliente' => '', 'localidad_cliente' => '', 'provincia_cliente' => '', 'emails_cliente' => [''], 'cuit_cliente' => ''];
 
             if (($page ?? 'dashboard') !== 'clientes') {
                 header('Location: /index.php?page=clientes');
@@ -1448,19 +1471,26 @@ if (is_logged_in() && isset($_GET['pdf'])) {
     $especieCultivar = trim($especie . ($cultivar !== '' ? ' / ' . $cultivar : ''));
     $especieCientifico = format_text_value($certificadoPdf['cientifico_especie'] ?? '');
     $localidad = format_text_value($certificadoPdf['localidad_pais_certificado'] ?? '----------------', '----------------');
-    $otrasDet = implode(', ', $detNombres);
-    $otrasDetTexto = trim((string) ($certificadoPdf['otras_determinaciones_texto_certificado'] ?? ''));
-    if ($otrasDetTexto !== '') {
-        $otrasDet = $otrasDet !== '' ? $otrasDet . ', ' . $otrasDetTexto : $otrasDetTexto;
-    }
+    // Escapar cada elemento individualmente
+    $detNombresEscapados = array_map(function ($item) {
+        return htmlspecialchars($item, ENT_QUOTES, 'UTF-8');
+    }, $detNombres);
 
+    // Unir con <br> (ya escapados)
+    $otrasDet = implode('<br>', $detNombresEscapados);
+    $otrasDetTexto = trim((string) ($certificadoPdf['otras_determinaciones_texto_certificado'] ?? ''));
+
+    if ($otrasDetTexto !== '') {
+        $textoEscapado = htmlspecialchars($otrasDetTexto, ENT_QUOTES, 'UTF-8');
+        $otrasDet = $otrasDet !== '' ? $otrasDet . '<br>' . $textoEscapado : $textoEscapado;
+    }
     $certificateSettings = get_certificate_settings(current_empresa_id());
     $claseMateria = trim((string) ($certificadoPdf['clase_materia_inerte_certificado'] ?? ''));
     $otrasSemillasTxt = trim((string) ($certificadoPdf['otras_semillas_certificado'] ?? ''));
     $amparaTotalidadLote = trim((string) ($certificadoPdf['ampara_totalidad_lote_certificado'] ?? 'N'));
     $amparaSi = $amparaTotalidadLote === 'S' ? 'X' : ' ';
     $amparaNo = $amparaTotalidadLote === 'N' ? 'X' : ' ';
-    $detalleDeterminaciones = $otrasDet !== '' ? htmlspecialchars($otrasDet, ENT_QUOTES, 'UTF-8') : 'N';
+    $detalleDeterminaciones = $otrasDet !== '' ? $otrasDet : 'N';
 
     $membreteImagePath = certificate_logo_path(current_empresa_id());
     $brandHeaderHtml = '';
@@ -1682,17 +1712,17 @@ if (is_logged_in() && ($page ?? 'dashboard') === 'clientes') {
     try {
         if (client_emails_table_exists()) {
             $clientesStatement = db()->prepare(
-                'SELECT c.id_cliente, c.nombre_cliente, c.telefono_cliente, c.direccion_cliente, c.cuit_cliente, c.created_at_cliente,
+                'SELECT c.id_cliente, c.nombre_cliente, c.telefono_cliente, c.direccion_cliente, c.localidad_cliente, c.provincia_cliente, c.cuit_cliente, c.created_at_cliente,
                         GROUP_CONCAT(ce.email_cliente ORDER BY ce.principal_email DESC, ce.id_email_cliente ASC SEPARATOR ", ") AS emails_cliente
                  FROM clientes c
                  LEFT JOIN cliente_emails ce ON ce.id_cliente = c.id_cliente AND ce.id_empresa = c.id_empresa AND ce.activo_email = 1
                  WHERE c.id_empresa = :id_empresa
-                 GROUP BY c.id_cliente, c.nombre_cliente, c.telefono_cliente, c.direccion_cliente, c.cuit_cliente, c.created_at_cliente
+                 GROUP BY c.id_cliente, c.nombre_cliente, c.telefono_cliente, c.direccion_cliente, c.localidad_cliente, c.provincia_cliente, c.cuit_cliente, c.created_at_cliente
                  ORDER BY c.id_cliente DESC'
             );
         } else {
             $clientesStatement = db()->prepare(
-                'SELECT id_cliente, nombre_cliente, telefono_cliente, direccion_cliente, cuit_cliente, created_at_cliente,
+                'SELECT id_cliente, nombre_cliente, telefono_cliente, direccion_cliente, localidad_cliente, provincia_cliente, cuit_cliente, created_at_cliente,
                         mail_cliente AS emails_cliente
                  FROM clientes
                  WHERE id_empresa = :id_empresa
@@ -1710,7 +1740,7 @@ if (is_logged_in() && ($page ?? 'dashboard') === 'clientes' && isset($_GET['edit
     $editId = filter_var($_GET['edit'], FILTER_VALIDATE_INT, ['options' => ['min_range' => 1]]);
     if ($editId !== false) {
         try {
-            $editStatement = db()->prepare('SELECT id_cliente, nombre_cliente, telefono_cliente, direccion_cliente, mail_cliente, cuit_cliente FROM clientes WHERE id_cliente = :id AND id_empresa = :id_empresa LIMIT 1');
+            $editStatement = db()->prepare('SELECT id_cliente, nombre_cliente, telefono_cliente, direccion_cliente, localidad_cliente, provincia_cliente, mail_cliente, cuit_cliente FROM clientes WHERE id_cliente = :id AND id_empresa = :id_empresa LIMIT 1');
             $editStatement->execute([':id' => $editId, ':id_empresa' => current_empresa_id()]);
             $editRow = $editStatement->fetch();
             if ($editRow !== false) {
@@ -1718,6 +1748,8 @@ if (is_logged_in() && ($page ?? 'dashboard') === 'clientes' && isset($_GET['edit
                 $clientForm['nombre_cliente'] = (string) ($editRow['nombre_cliente'] ?? '');
                 $clientForm['telefono_cliente'] = (string) ($editRow['telefono_cliente'] ?? '');
                 $clientForm['direccion_cliente'] = (string) ($editRow['direccion_cliente'] ?? '');
+                $clientForm['provincia_cliente'] = (string) ($editRow['provincia_cliente'] ?? '');
+                $clientForm['localidad_cliente'] = (string) ($editRow['localidad_cliente'] ?? '');
                 $clientForm['cuit_cliente'] = (string) ($editRow['cuit_cliente'] ?? '');
 
                 if (client_emails_table_exists()) {
@@ -2184,6 +2216,16 @@ $loggedUser = $_SESSION['user']['name'] ?? 'Usuario';
                                     <input type="text" class="form-control" id="direccion_cliente" name="direccion_cliente" maxlength="255" value="<?php echo htmlspecialchars($clientForm['direccion_cliente'], ENT_QUOTES, 'UTF-8'); ?>">
                                 </div>
 
+                                <div class="col-6">
+                                    <label for="localidad_cliente" class="form-label">Localidad</label>
+                                    <input type="text" class="form-control" id="localidad_cliente" name="localidad_cliente" maxlength="255" value="<?php echo htmlspecialchars($clientForm['localidad_cliente'], ENT_QUOTES, 'UTF-8'); ?>">
+                                </div>
+
+                                <div class="col-6">
+                                    <label for="provincia_cliente" class="form-label">Provincia</label>
+                                    <input type="text" class="form-control" id="provincia_cliente" name="provincia_cliente" maxlength="255" value="<?php echo htmlspecialchars($clientForm['provincia_cliente'], ENT_QUOTES, 'UTF-8'); ?>">
+                                </div>
+
                                 <div class="col-12">
                                     <label class="form-label">Emails</label>
                                     <div id="cliente-emails-list">
@@ -2216,6 +2258,8 @@ $loggedUser = $_SESSION['user']['name'] ?? 'Usuario';
                                             <th>Nombre</th>
                                             <th>Teléfono</th>
                                             <th>Dirección</th>
+                                            <th>Localidad</th>
+                                            <th>Provincia</th>
                                             <th>Emails</th>
                                             <th>CUIT</th>
                                             <th>Alta</th>
@@ -2225,7 +2269,7 @@ $loggedUser = $_SESSION['user']['name'] ?? 'Usuario';
                                     <tbody>
                                         <?php if ($clientes === []): ?>
                                             <tr>
-                                                <td colspan="8" class="text-center text-muted">No hay clientes cargados aún.</td>
+                                                <td colspan="12" class="text-center text-muted">No hay clientes cargados aún.</td>
                                             </tr>
                                         <?php else: ?>
                                             <?php foreach ($clientes as $cliente): ?>
@@ -2234,6 +2278,8 @@ $loggedUser = $_SESSION['user']['name'] ?? 'Usuario';
                                                     <td><?php echo htmlspecialchars((string) $cliente['nombre_cliente'], ENT_QUOTES, 'UTF-8'); ?></td>
                                                     <td><?php echo htmlspecialchars((string) ($cliente['telefono_cliente'] ?? ''), ENT_QUOTES, 'UTF-8'); ?></td>
                                                     <td><?php echo htmlspecialchars((string) ($cliente['direccion_cliente'] ?? ''), ENT_QUOTES, 'UTF-8'); ?></td>
+                                                    <td><?php echo htmlspecialchars((string) ($cliente['localidad_cliente'] ?? ''), ENT_QUOTES, 'UTF-8'); ?></td>
+                                                    <td><?php echo htmlspecialchars((string) ($cliente['provincia_cliente'] ?? ''), ENT_QUOTES, 'UTF-8'); ?></td>
                                                     <td><?php echo htmlspecialchars((string) ($cliente['emails_cliente'] ?? ''), ENT_QUOTES, 'UTF-8'); ?></td>
                                                     <td><?php echo htmlspecialchars((string) ($cliente['cuit_cliente'] ?? ''), ENT_QUOTES, 'UTF-8'); ?></td>
                                                     <td><?php echo htmlspecialchars((string) ($cliente['created_at_cliente'] ?? ''), ENT_QUOTES, 'UTF-8'); ?></td>
