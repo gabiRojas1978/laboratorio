@@ -2934,7 +2934,7 @@ $loggedUser = $_SESSION['user']['name'] ?? 'Usuario';
                                     </div>
 
                                     <div class="col-md-4">
-                                        <label for="nro_analisis_certificado" class="form-label">N° de Análisis</label>
+                                        <label for="nro_analisis_certificado" class="form-label">N° de Análisis *</label>
                                         <input type="text" class="form-control" id="nro_analisis_certificado" name="nro_analisis_certificado" maxlength="100" value="<?php echo htmlspecialchars($certForm['nro_analisis_certificado'], ENT_QUOTES, 'UTF-8'); ?>" required>
                                     </div>
 
@@ -2947,12 +2947,12 @@ $loggedUser = $_SESSION['user']['name'] ?? 'Usuario';
                                     </div>
 
                                     <div class="col-md-3">
-                                        <label for="fecha_muestras_certificado" class="form-label">Fecha de recepción de muestras</label>
+                                        <label for="fecha_muestras_certificado" class="form-label">Fecha de recepción de muestras *</label>
                                         <input type="date" class="form-control" id="fecha_muestras_certificado" name="fecha_muestras_certificado" value="<?php echo htmlspecialchars($certForm['fecha_muestras_certificado'], ENT_QUOTES, 'UTF-8'); ?>" required>
                                     </div>
 
                                     <div class="col-md-3">
-                                        <label for="fecha_finalizacion_ensayos_certificado" class="form-label">Fecha finalización de ensayos</label>
+                                        <label for="fecha_finalizacion_ensayos_certificado" class="form-label">Fecha finalización de ensayos *</label>
                                         <input type="date" class="form-control" id="fecha_finalizacion_ensayos_certificado" name="fecha_finalizacion_ensayos_certificado" value="<?php echo htmlspecialchars($certForm['fecha_finalizacion_ensayos_certificado'], ENT_QUOTES, 'UTF-8'); ?>" required>
                                     </div>
 
