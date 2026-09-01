@@ -1218,7 +1218,8 @@ if (is_logged_in() && $_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['sav
 
     $clientId = filter_var($certForm['id_cliente_certificado'], FILTER_VALIDATE_INT, ['options' => ['min_range' => 1]]);
     $speciesId = filter_var($certForm['id_especie_certificado'], FILTER_VALIDATE_INT, ['options' => ['min_range' => 1]]);
-    $cultivarId = filter_var($certForm['id_cultivar_certificado'], FILTER_VALIDATE_INT, ['options' => ['min_range' => 1]]);
+    $cultivarRawId = trim((string) ($certForm['id_cultivar_certificado'] ?? ''));
+    $cultivarId = $cultivarRawId === '' ? null : filter_var($cultivarRawId, FILTER_VALIDATE_INT, ['options' => ['min_range' => 1]]);
 
     if ($clientId === false) {
         $errors[] = 'Debes seleccionar un cliente válido.';
@@ -1240,14 +1241,26 @@ if (is_logged_in() && $_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['sav
         }
     }
 
-    if ($cultivarId === false) {
+    if ($cultivarRawId !== '' && $cultivarId === false) {
         $errors[] = 'Debes seleccionar un cultivar válido.';
-    } else {
+    } elseif ($cultivarId !== null) {
         $ownStatement = db()->prepare('SELECT id_cultivar FROM cultivares WHERE id_cultivar = :id AND id_empresa = :id_empresa LIMIT 1');
         $ownStatement->execute([':id' => $cultivarId, ':id_empresa' => current_empresa_id()]);
         if ($ownStatement->fetch() === false) {
             $errors[] = 'El cultivar seleccionado no existe.';
         }
+    }
+
+    if ($certForm['nro_analisis_certificado'] === '') {
+        $errors[] = 'El número de análisis es obligatorio.';
+    }
+
+    if ($certForm['fecha_muestras_certificado'] === '') {
+        $errors[] = 'La fecha de recepción de muestras es obligatoria.';
+    }
+
+    if ($certForm['fecha_finalizacion_ensayos_certificado'] === '') {
+        $errors[] = 'La fecha de finalización de ensayos es obligatoria.';
     }
 
     // Validar porcentajes de Pureza - DEBEN sumar 100 o 0
@@ -1319,7 +1332,7 @@ if (is_logged_in() && $_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['sav
                 ':id_usuario_certificado' => $_SESSION['user']['id'] ?? null,
                 ':id_cliente_certificado' => $clientId,
                 ':id_especie_certificado' => $speciesId,
-                ':id_cultivar_certificado' => $cultivarId,
+                ':id_cultivar_certificado' => $cultivarId !== null ? $cultivarId : null,
                 ':marca_lote_certificado' => $certForm['marca_lote_certificado'] !== '' ? $certForm['marca_lote_certificado'] : null,
                 ':peso_certificado' => $certForm['peso_certificado'] !== '' ? (float)$certForm['peso_certificado'] : null,
                 ':nro_envases_certificado' => $certForm['nro_envases_certificado'] !== '' ? (int)$certForm['nro_envases_certificado'] : null,
@@ -2848,8 +2861,8 @@ $loggedUser = $_SESSION['user']['name'] ?? 'Usuario';
                                 </script>
                             <?php endif; ?>
 
-                            <?php if ($clientesOptions === [] || $especiesOptions === [] || $cultivaresOptions === []): ?>
-                                <div class="alert alert-warning mb-0">Primero debes cargar al menos un cliente, una especie y un cultivar para poder dar de alta certificados.</div>
+                            <?php if ($clientesOptions === [] || $especiesOptions === []): ?>
+                                <div class="alert alert-warning mb-0">Primero debes cargar al menos un cliente y una especie para poder dar de alta certificados.</div>
                             <?php else: ?>
                                 <form method="post" class="row g-3 mt-1">
                                     <input type="hidden" name="save_certificado" value="1">
@@ -2881,8 +2894,8 @@ $loggedUser = $_SESSION['user']['name'] ?? 'Usuario';
                                     </div>
 
                                     <div class="col-md-4">
-                                        <label for="id_cultivar_certificado" class="form-label">Cultivar *</label>
-                                        <select class="form-select" id="id_cultivar_certificado" name="id_cultivar_certificado" required>
+                                        <label for="id_cultivar_certificado" class="form-label">Cultivar</label>
+                                        <select class="form-select" id="id_cultivar_certificado" name="id_cultivar_certificado">
                                             <option value="">Selecciona un cultivar</option>
                                             <?php foreach ($cultivaresOptions as $cultivar): ?>
                                                 <option value="<?php echo htmlspecialchars((string) $cultivar['id_cultivar'], ENT_QUOTES, 'UTF-8'); ?>" data-especie="<?php echo htmlspecialchars((string) $cultivar['id_especie'], ENT_QUOTES, 'UTF-8'); ?>" <?php echo $certForm['id_cultivar_certificado'] === (string) $cultivar['id_cultivar'] ? 'selected' : ''; ?>>
@@ -2922,7 +2935,7 @@ $loggedUser = $_SESSION['user']['name'] ?? 'Usuario';
 
                                     <div class="col-md-4">
                                         <label for="nro_analisis_certificado" class="form-label">N° de Análisis</label>
-                                        <input type="text" class="form-control" id="nro_analisis_certificado" name="nro_analisis_certificado" maxlength="100" value="<?php echo htmlspecialchars($certForm['nro_analisis_certificado'], ENT_QUOTES, 'UTF-8'); ?>">
+                                        <input type="text" class="form-control" id="nro_analisis_certificado" name="nro_analisis_certificado" maxlength="100" value="<?php echo htmlspecialchars($certForm['nro_analisis_certificado'], ENT_QUOTES, 'UTF-8'); ?>" required>
                                     </div>
 
                                     <hr class="my-4">
@@ -2935,12 +2948,12 @@ $loggedUser = $_SESSION['user']['name'] ?? 'Usuario';
 
                                     <div class="col-md-3">
                                         <label for="fecha_muestras_certificado" class="form-label">Fecha de recepción de muestras</label>
-                                        <input type="date" class="form-control" id="fecha_muestras_certificado" name="fecha_muestras_certificado" value="<?php echo htmlspecialchars($certForm['fecha_muestras_certificado'], ENT_QUOTES, 'UTF-8'); ?>">
+                                        <input type="date" class="form-control" id="fecha_muestras_certificado" name="fecha_muestras_certificado" value="<?php echo htmlspecialchars($certForm['fecha_muestras_certificado'], ENT_QUOTES, 'UTF-8'); ?>" required>
                                     </div>
 
                                     <div class="col-md-3">
                                         <label for="fecha_finalizacion_ensayos_certificado" class="form-label">Fecha finalización de ensayos</label>
-                                        <input type="date" class="form-control" id="fecha_finalizacion_ensayos_certificado" name="fecha_finalizacion_ensayos_certificado" value="<?php echo htmlspecialchars($certForm['fecha_finalizacion_ensayos_certificado'], ENT_QUOTES, 'UTF-8'); ?>">
+                                        <input type="date" class="form-control" id="fecha_finalizacion_ensayos_certificado" name="fecha_finalizacion_ensayos_certificado" value="<?php echo htmlspecialchars($certForm['fecha_finalizacion_ensayos_certificado'], ENT_QUOTES, 'UTF-8'); ?>" required>
                                     </div>
 
                                     <hr class="my-4">
