@@ -170,6 +170,332 @@ function client_emails_table_exists(): bool
     return $exists;
 }
 
+function get_cliente_emails(int $idCliente): array
+{
+    if (client_emails_table_exists()) {
+        $statement = db()->prepare(
+            'SELECT email_cliente FROM cliente_emails
+             WHERE id_cliente = :id_cliente AND id_empresa = :id_empresa AND activo_email = 1
+             ORDER BY principal_email DESC, id_email_cliente ASC'
+        );
+        $statement->execute([':id_cliente' => $idCliente, ':id_empresa' => current_empresa_id()]);
+        $emails = array_map(static fn($email) => trim((string) $email), $statement->fetchAll(PDO::FETCH_COLUMN));
+    } else {
+        $statement = db()->prepare('SELECT mail_cliente FROM clientes WHERE id_cliente = :id_cliente AND id_empresa = :id_empresa LIMIT 1');
+        $statement->execute([':id_cliente' => $idCliente, ':id_empresa' => current_empresa_id()]);
+        $singleEmail = trim((string) ($statement->fetchColumn() ?: ''));
+        $emails = $singleEmail !== '' ? [$singleEmail] : [];
+    }
+
+    return array_values(array_filter($emails, static fn($email) => $email !== ''));
+}
+
+function smtp_settings_path(int $idEmpresa): string
+{
+    return empresa_storage_dir($idEmpresa) . DIRECTORY_SEPARATOR . 'smtp_config.json';
+}
+
+function get_smtp_settings(int $idEmpresa): array
+{
+    $settings = [
+        'host' => '',
+        'port' => '587',
+        'usuario' => '',
+        'password' => '',
+        'seguridad' => 'tls',
+        'remitente_email' => '',
+        'remitente_nombre' => '',
+    ];
+    $contents = @file_get_contents(smtp_settings_path($idEmpresa));
+    $savedSettings = json_decode((string) $contents, true);
+
+    if (!is_array($savedSettings)) {
+        return $settings;
+    }
+
+    foreach (array_keys($settings) as $key) {
+        if (isset($savedSettings[$key])) {
+            $settings[$key] = trim((string) $savedSettings[$key]);
+        }
+    }
+
+    return $settings;
+}
+
+function save_smtp_settings(int $idEmpresa, array $settings): bool
+{
+    $encodedSettings = json_encode($settings, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+    return $encodedSettings !== false
+        && file_put_contents(smtp_settings_path($idEmpresa), $encodedSettings, LOCK_EX) !== false;
+}
+
+function smtp_is_configured(array $settings): bool
+{
+    return $settings['host'] !== '' && $settings['usuario'] !== '' && $settings['remitente_email'] !== '';
+}
+
+function build_certificado_pdf(int $certificadoId): ?array
+{
+    require_once __DIR__ . '/vendor/autoload.php';
+
+    try {
+        $pdfStatement = db()->prepare(
+            'SELECT c.*, cl.nombre_cliente, e.nombre_especie, e.cientifico_especie, cu.nombre_cultivar
+            FROM certificados c
+            LEFT JOIN clientes cl ON cl.id_cliente = c.id_cliente_certificado
+            LEFT JOIN especies e ON e.id_especie = c.id_especie_certificado
+            LEFT JOIN cultivares cu ON cu.id_cultivar = c.id_cultivar_certificado
+            WHERE c.id_certificado = :id AND c.id_empresa = :id_empresa
+            LIMIT 1'
+        );
+        $pdfStatement->execute([':id' => $certificadoId, ':id_empresa' => current_empresa_id()]);
+        $certificadoPdf = $pdfStatement->fetch();
+
+        $detNombresStatement = db()->prepare(
+            'SELECT od.nombre_determinacion
+            FROM certificado_determinaciones cd
+            JOIN otras_determinaciones od ON od.id_determinacion = cd.id_determinacion
+            WHERE cd.id_certificado = :id
+            ORDER BY od.nombre_determinacion ASC'
+        );
+        $detNombresStatement->execute([':id' => $certificadoId]);
+        $detNombres = $detNombresStatement->fetchAll(PDO::FETCH_COLUMN);
+    } catch (Throwable $throwable) {
+        return null;
+    }
+
+    if ($certificadoPdf === false) {
+        return null;
+    }
+
+    $cliente = format_text_value($certificadoPdf['nombre_cliente'] ?? '');
+    $especie = format_text_value($certificadoPdf['nombre_especie'] ?? '');
+    $cultivar = trim((string) ($certificadoPdf['nombre_cultivar'] ?? ''));
+    $especieCultivar = trim($especie . ($cultivar !== '' ? ' / ' . $cultivar : ''));
+    $especieCientifico = format_text_value($certificadoPdf['cientifico_especie'] ?? '');
+    $localidad = format_text_value($certificadoPdf['localidad_pais_certificado'] ?? '----------------', '----------------');
+    // Escapar cada elemento individualmente
+    $detNombresEscapados = array_map(function ($item) {
+        return htmlspecialchars($item, ENT_QUOTES, 'UTF-8');
+    }, $detNombres);
+
+    // Unir con <br> (ya escapados)
+    $otrasDet = implode('<br>', $detNombresEscapados);
+    $otrasDetTexto = trim((string) ($certificadoPdf['otras_determinaciones_texto_certificado'] ?? ''));
+
+    if ($otrasDetTexto !== '') {
+        $textoEscapado = htmlspecialchars($otrasDetTexto, ENT_QUOTES, 'UTF-8');
+        $otrasDet = $otrasDet !== '' ? $otrasDet . '<br>' . $textoEscapado : $textoEscapado;
+    }
+    $certificateSettings = get_certificate_settings(current_empresa_id());
+    $claseMateria = trim((string) ($certificadoPdf['clase_materia_inerte_certificado'] ?? ''));
+    $otrasSemillasTxt = trim((string) ($certificadoPdf['otras_semillas_certificado'] ?? ''));
+    $amparaTotalidadLote = trim((string) ($certificadoPdf['ampara_totalidad_lote_certificado'] ?? 'N'));
+    $amparaSi = $amparaTotalidadLote === 'S' ? 'X' : ' ';
+    $amparaNo = $amparaTotalidadLote === 'N' ? 'X' : ' ';
+    $detalleDeterminaciones = $otrasDet !== '' ? $otrasDet : 'N';
+
+    $esCertificadoInase = trim((string) ($certificadoPdf['tipo_certificado'] ?? '')) === 'certificadoinase';
+    $membreteImagePath = certificate_logo_path(current_empresa_id());
+    $brandHeaderHtml = '';
+
+    if ($membreteImagePath !== null && is_file($membreteImagePath)) {
+        $membreteImagePathNormalized = str_replace('\\', '/', $membreteImagePath);
+        $brandHeaderHtml = '<div class="center brand"><img src="'
+            . htmlspecialchars($membreteImagePathNormalized, ENT_QUOTES, 'UTF-8')
+            . '" alt="Logo del laboratorio" class="brand-image"></div>';
+    }
+
+    $germinacionHeading = $esCertificadoInase ? 'GERMINACIÓN' : 'PODER GERMINATIVO';
+    $pgcVigorHtml = $esCertificadoInase ? '' : '
+        <table class="grid" style="margin-top:4px;">
+            <tr class="bold">
+                <td colspan="6">PODER GERMINATIVO CURADO<br><span class="small">(% en número)</span></td>
+                <td colspan="4">VIGOR: COLD TEST (PRUEBA DE FRÍO)<br><span class="small">(% en número)</span></td>
+            </tr>
+            <tr class="bold mid">
+                <td>Número<br>de Días</td>
+                <td>Plántulas<br>Normales</td>
+                <td>Semillas<br>Duras</td>
+                <td>Semillas<br>Frescas</td>
+                <td>Plántulas<br>Anormales</td>
+                <td>Semillas<br>Muertas</td>
+                <td>Número<br>de Días</td>
+                <td colspan="3">Plántulas Normales</td>
+            </tr>
+            <tr>
+                <td>' . htmlspecialchars(format_text_value($certificadoPdf['pgc_numero_dias_certificado'] ?? ''), ENT_QUOTES, 'UTF-8') . '</td>
+                <td class="pg-highlight">' . htmlspecialchars(format_percent_value($certificadoPdf['pgc_plantulas_normales_certificado'] ?? null), ENT_QUOTES, 'UTF-8') . '</td>
+                <td>' . htmlspecialchars(format_percent_value($certificadoPdf['pgc_semillas_duras_certificado'] ?? null), ENT_QUOTES, 'UTF-8') . '</td>
+                <td>' . htmlspecialchars(format_percent_value($certificadoPdf['pgc_semillas_frescas_certificado'] ?? null), ENT_QUOTES, 'UTF-8') . '</td>
+                <td>' . htmlspecialchars(format_percent_value($certificadoPdf['pgc_plantulas_anormales_certificado'] ?? null), ENT_QUOTES, 'UTF-8') . '</td>
+                <td>' . htmlspecialchars(format_percent_value($certificadoPdf['pgc_semillas_muertas_certificado'] ?? null), ENT_QUOTES, 'UTF-8') . '</td>
+                <td>' . htmlspecialchars(format_text_value($certificadoPdf['vigor_nro_dias_certificado'] ?? ''), ENT_QUOTES, 'UTF-8') . '</td>
+                <td class="pg-highlight" colspan="3">' . htmlspecialchars(format_percent_value($certificadoPdf['vigor_plantulas_normales_certificado'] ?? null), ENT_QUOTES, 'UTF-8') . '</td>
+            </tr>
+        </table>';
+
+    $html = '
+    <html>
+    <head>
+        <style>
+            body { font-family: serif; font-size: 14px; color: #222; }
+            .cert { width: 100%; border-collapse: collapse; }
+            .center { text-align: center; }
+            .right { text-align: right; }
+            .bold { font-weight: 700; }
+            .title { font-size: 42px; font-weight: 700; letter-spacing: 1px; margin-top: 2px; }
+            .subtitle { font-size: 13px; line-height: 1.15; }
+            .brand { margin: 0 auto 4px; text-align: center; }
+            .brand-image { width: 102mm; max-width: 100%; height: auto; }
+            .brand-logo { width: 62px; height: 62px; background: #4a5c2f; border: 1px solid #404040; display: inline-block; vertical-align: top; margin-right: 8px; }
+            .brand-text { display: inline-block; vertical-align: top; text-align: left; }
+            .brand-main { font-size: 12px; font-weight: 700; line-height: 1.2; margin-top: 1px; }
+            .brand-sub { font-size: 10px; letter-spacing: 4px; color: #6f7f40; margin-top: 3px; font-weight: 700; }
+            .brand-rule { height: 1px; background: #7f8f48; margin-top: 2px; width: 168px; }
+            .section { margin-top: 8px; }
+            .heading { background: #d8d8d8; border: 1px solid #666; font-size: 11px; font-weight: 700; text-align: center; padding: 5px 0; }
+            table.grid { width: 100%; border-collapse: collapse; }
+            table.grid td, table.grid th { border: 1px solid #666; padding: 4px 5px; text-align: center; vertical-align: middle; }
+            table.grid .left { text-align: left; }
+            .pg-highlight { background: #fdecec; }
+            .small { font-size: 9px; }
+            .mid { font-size: 10px; }
+            .line-label { margin-top: 6px; border-top: 1px solid #333; padding-top: 4px; font-size: 11px; font-weight: 700; }
+            .line-value { font-size: 11px; font-weight: 400; }
+            .footer { margin-top: 8px; font-size: 10px; }
+            .phone { text-align: center; font-size: 10px; letter-spacing: 1px; margin-top: 6px; }
+            .address { text-align: center; font-size: 10px; letter-spacing: 1px; }
+            .si-no { font-size: 13px; letter-spacing: 1px; font-weight: 700; margin: 9px 0 5px; }
+        </style>
+    </head>
+    <body>' . $brandHeaderHtml . '
+
+        <div class="center title">CERTIFICADO DE ANÁLISIS</div>
+        <div class="center subtitle">Laboratorio inscripto en el Registro Nacional de Comercio y Fiscalización de Semillas I/8008</div>' . ($esCertificadoInase ? '' : '
+        <div class="center subtitle">Certificado de Análisis fuera del alcance de la acreditación otorgada por INASE</div>') . '
+
+        <div class="section heading">INFORMACIÓN DEL SOLICITANTE</div>
+        <table class="grid">
+            <tr>
+                <td class="left" colspan="2"><span class="bold">Nombre del Solicitante:</span> ' . htmlspecialchars($cliente, ENT_QUOTES, 'UTF-8') . '</td>
+                <td class="left" colspan="2"><span class="bold">Marca y N° de Lote:</span> ' . htmlspecialchars((string) ($certificadoPdf['marca_lote_certificado'] ?? ''), ENT_QUOTES, 'UTF-8') . '</td>
+            </tr>
+            <tr>
+                <td class="left" colspan="4"><span class="bold">Especie/ Cultivar/ Categoría:</span> ' . htmlspecialchars($especieCultivar, ENT_QUOTES, 'UTF-8') . '</td>
+            </tr>
+            <tr class="bold">
+                <td>PESO DEL LOTE</td>
+                <td>N° DE ENVASES</td>
+                <td>FECHA DE MUESTREO</td>
+                <td>OTRAS REFERENCIAS</td>
+            </tr>
+            <tr>
+                <td>' . htmlspecialchars(format_text_value($certificadoPdf['peso_certificado'] ?? '----------------', '----------------'), ENT_QUOTES, 'UTF-8') . '</td>
+                <td>' . htmlspecialchars(format_text_value($certificadoPdf['nro_envases_certificado'] ?? '----------------', '----------------'), ENT_QUOTES, 'UTF-8') . '</td>
+                <td>' . htmlspecialchars(format_date_short((string) ($certificadoPdf['fecha_muestreo_certificado'] ?? '')), ENT_QUOTES, 'UTF-8') . '</td>
+                <td>' . htmlspecialchars(format_text_value($certificadoPdf['otras_referencias_certificado'] ?? '----------------', '----------------'), ENT_QUOTES, 'UTF-8') . '</td>
+            </tr>
+            <tr class="bold">
+                <td>N° DE PRECINTO</td>
+                <td>FECHA DE RECEPCIÓN<br>DE MUESTRAS</td>
+                <td>FECHA DE FINALIZACIÓN<br>DE LOS ENSAYOS</td>
+                <td>N° DE ANÁLISIS</td>
+            </tr>
+            <tr>
+                <td>' . htmlspecialchars(format_text_value($certificadoPdf['precinto_certificado'] ?? '----------------', '----------------'), ENT_QUOTES, 'UTF-8') . '</td>
+                <td>' . htmlspecialchars(format_date_short((string) ($certificadoPdf['fecha_muestras_certificado'] ?? '')), ENT_QUOTES, 'UTF-8') . '</td>
+                <td>' . htmlspecialchars(format_date_short((string) ($certificadoPdf['fecha_finalizacion_ensayos_certificado'] ?? '')), ENT_QUOTES, 'UTF-8') . '</td>
+                <td>' . htmlspecialchars(format_text_value($certificadoPdf['nro_analisis_certificado'] ?? '----------------', '----------------'), ENT_QUOTES, 'UTF-8') . '</td>
+            </tr>
+        </table>
+
+        <div class="section heading">RESULTADOS LOS ANÁLISIS</div>
+        <table class="grid">
+            <tr>
+                <td class="left" colspan="11"><span class="bold">Especie (Nombre Científico):</span> <em>' . htmlspecialchars($especieCientifico, ENT_QUOTES, 'UTF-8') . '</em></td>
+            </tr>
+            <tr class="bold">
+                <td colspan="3">PUREZA<br><span class="small">(% en peso)</span></td>
+                <td colspan="6">' . $germinacionHeading . '<br><span class="small">(% en número)</span></td>
+                <td colspan="2">CONTENIDO DE HUMEDAD<br><span class="small">(%)</span></td>
+            </tr>
+            <tr class="bold mid">
+                <td>Semilla<br>Pura</td>
+                <td>Materia<br>Inerte</td>
+                <td>Otras<br>Semillas</td>
+                <td>Número<br>de Días</td>
+                <td>Plántulas<br>Normales</td>
+                <td>Semillas<br>Duras</td>
+                <td>Semillas<br>Frescas</td>
+                <td>Plántulas<br>Anormales</td>
+                <td>Semillas<br>Muertas</td>
+                <td colspan="2">Contenido<br>de Humedad</td>
+            </tr>
+            <tr>
+                <td>' . htmlspecialchars(format_percent_value($certificadoPdf['pureza_semilla_pura_certificado'] ?? null), ENT_QUOTES, 'UTF-8') . '</td>
+                <td>' . htmlspecialchars(format_percent_value($certificadoPdf['materia_inerte_certificado'] ?? null), ENT_QUOTES, 'UTF-8') . '</td>
+                <td>' . htmlspecialchars(format_percent_value($certificadoPdf['pureza_otras_semillas_certificado'] ?? null), ENT_QUOTES, 'UTF-8') . '</td>
+                <td>' . htmlspecialchars(format_text_value($certificadoPdf['pg_numero_dias_certificado'] ?? ''), ENT_QUOTES, 'UTF-8') . '</td>
+                <td class="pg-highlight">' . htmlspecialchars(format_percent_value($certificadoPdf['pg_plantulas_normales_certificado'] ?? null), ENT_QUOTES, 'UTF-8') . '</td>
+                <td>' . htmlspecialchars(format_percent_value($certificadoPdf['pg_semillas_duras_certificado'] ?? null), ENT_QUOTES, 'UTF-8') . '</td>
+                <td>' . htmlspecialchars(format_percent_value($certificadoPdf['pg_semillas_frescas_certificado'] ?? null), ENT_QUOTES, 'UTF-8') . '</td>
+                <td>' . htmlspecialchars(format_percent_value($certificadoPdf['pg_plantulas_anormales_certificado'] ?? null), ENT_QUOTES, 'UTF-8') . '</td>
+                <td>' . htmlspecialchars(format_percent_value($certificadoPdf['pg_semillas_muertas_certificado'] ?? null), ENT_QUOTES, 'UTF-8') . '</td>
+                <td colspan="2">' . htmlspecialchars(format_percent_value($certificadoPdf['pg_contenido_humedad_certificado'] ?? null), ENT_QUOTES, 'UTF-8') . '</td>
+            </tr>
+        </table>
+        ' . $pgcVigorHtml . '
+
+        <div class="line-label">Clase de Materia Inerte: <span class="line-value">' . htmlspecialchars(format_text_value($certificadoPdf['clase_materia_inerte_certificado'] ?? '', ' '), ENT_QUOTES, 'UTF-8') . '</span></div>
+        <div class="line-label">Otras Semillas: <span class="line-value">' . htmlspecialchars(format_text_value($certificadoPdf['otras_semillas_certificado'] ?? '', ' '), ENT_QUOTES, 'UTF-8') . '</span></div>
+        <div class="line-label">Otras Determinaciones: <span class="line-value">' . $detalleDeterminaciones . '</span></div>
+
+        <div class="si-no left">ESTE CERTIFICADO &nbsp;&nbsp; SI [' . $amparaSi . '] &nbsp;&nbsp; NO [' . $amparaNo . '] &nbsp;&nbsp; AMPARA LA TOTALIDAD DEL LOTE</div>
+        
+    </body>
+    </html>';
+
+    //------------------------------------------------
+    $footerHtml = '
+    <table class="grid footer" style="width:100%; border-collapse: collapse;">
+        <tr class="bold">
+            <td style="border:1px solid #666; padding:4px 5px; text-align:center;">Localidad y País</td>
+            <td style="border:1px solid #666; padding:4px 5px; text-align:center;">Fecha de Emisión</td>
+            <td style="border:1px solid #666; padding:4px 5px; text-align:center;">Firma del Director Técnico</td>
+        </tr>
+        <tr>
+            <td style="border:1px solid #666; padding:4px 5px; height:54px; text-align:center;">' . htmlspecialchars($certificateSettings['localidad_pais'], ENT_QUOTES, 'UTF-8') . '</td>
+            <td style="border:1px solid #666; padding:4px 5px; text-align:center;">' . htmlspecialchars(format_date_long_spanish((string) ($certificadoPdf['fecha_emision_certificado'] ?? '')), ENT_QUOTES, 'UTF-8') . '</td>
+            <td style="border:1px solid #666; padding:4px 5px 5px; text-align:center; vertical-align:bottom;">' . htmlspecialchars($certificateSettings['firma_director_tecnico'], ENT_QUOTES, 'UTF-8') . '</td>
+        </tr>
+    </table>
+    <div class="phone" style="text-align:center; font-size:10px; letter-spacing:1px; margin-top:6px;">TELÉFONO 2346-316003</div>
+    <div class="address" style="text-align:center; font-size:10px; letter-spacing:1px;">SAN LORENZO N° 341 | CHIVILCOY (6620) BUENOS AIRES</div>
+    ';
+    //------------------------------------------------
+
+    $mpdf = new \Mpdf\Mpdf([
+        'format' => 'A4',
+        'margin_left' => 10,
+        'margin_right' => 10,
+        'margin_top' => 8,
+        'margin_bottom' => 30, //5
+    ]);
+    $mpdf->SetHTMLFooter($footerHtml);
+    $mpdf->WriteHTML($html);
+
+    $pdfFilename = 'certificado_' . $certificadoId . '.pdf';
+    $pdfContent = $mpdf->Output($pdfFilename, \Mpdf\Output\Destination::STRING_RETURN);
+
+    $certificadosDir = empresa_storage_dir(current_empresa_id());
+    if (is_dir($certificadosDir) && is_writable($certificadosDir)) {
+        @file_put_contents(rtrim($certificadosDir, '\\/') . DIRECTORY_SEPARATOR . $pdfFilename, $pdfContent);
+    }
+
+    return ['content' => $pdfContent, 'filename' => $pdfFilename];
+}
+
 $navigation = [
     'administracion' => [
         'label' => 'Administración',
@@ -186,6 +512,7 @@ $navigation = [
         'label' => 'Certificados',
         'items' => [
             'Certificadogeneral' => 'Certificado general',
+            'CertificadoINASE' => 'Certificado INASE',
         ],
     ],
 ];
@@ -208,6 +535,7 @@ $pageMap = [
     'usuarios' => ['title' => 'Usuarios', 'subtitle' => 'Gestión de usuarios del sistema'],
     'configuracion' => ['title' => 'Configuración', 'subtitle' => 'Preferencias del sistema'],
     'Certificadogeneral' => ['title' => 'Certificado general', 'subtitle' => 'Emisión de certificados'],
+    'CertificadoINASE' => ['title' => 'Certificado INASE', 'subtitle' => 'Emisión de certificados INASE'],
     'empresas' => ['title' => 'Empresas', 'subtitle' => 'Alta y administración de laboratorios (tenants)'],
 ];
 
@@ -423,6 +751,32 @@ if (is_logged_in() && $_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['sav
         $errors[] = 'No fue posible guardar los datos del certificado. Verifica los permisos de la carpeta de almacenamiento.';
     } else {
         $_SESSION['success_message'] = 'Datos del pie de certificado actualizados correctamente.';
+        header('Location: /index.php?page=configuracion');
+        exit;
+    }
+}
+
+if (is_logged_in() && $_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['save_smtp_config'])) {
+    $existingSmtpSettings = get_smtp_settings(current_empresa_id());
+    $smtpPasswordInput = (string) ($_POST['smtp_password'] ?? '');
+    $smtpSettings = [
+        'host' => trim((string) ($_POST['smtp_host'] ?? '')),
+        'port' => trim((string) ($_POST['smtp_port'] ?? '587')),
+        'usuario' => trim((string) ($_POST['smtp_usuario'] ?? '')),
+        'password' => $smtpPasswordInput !== '' ? $smtpPasswordInput : $existingSmtpSettings['password'],
+        'seguridad' => in_array($_POST['smtp_seguridad'] ?? 'tls', ['tls', 'ssl', 'none'], true) ? (string) $_POST['smtp_seguridad'] : 'tls',
+        'remitente_email' => trim((string) ($_POST['smtp_remitente_email'] ?? '')),
+        'remitente_nombre' => trim((string) ($_POST['smtp_remitente_nombre'] ?? '')),
+    ];
+
+    if ($smtpSettings['remitente_email'] !== '' && !filter_var($smtpSettings['remitente_email'], FILTER_VALIDATE_EMAIL)) {
+        $errors[] = 'El email remitente no es válido.';
+    } elseif (!ctype_digit($smtpSettings['port']) || (int) $smtpSettings['port'] < 1 || (int) $smtpSettings['port'] > 65535) {
+        $errors[] = 'El puerto SMTP no es válido.';
+    } elseif (!save_smtp_settings(current_empresa_id(), $smtpSettings)) {
+        $errors[] = 'No fue posible guardar la configuración de correo.';
+    } else {
+        $_SESSION['success_message'] = 'Configuración de correo actualizada correctamente.';
         header('Location: /index.php?page=configuracion');
         exit;
     }
@@ -1169,8 +1523,10 @@ if (is_logged_in() && $_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['del
 }
 
 if (is_logged_in() && $_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['save_certificado'])) {
-    // Tipo de certificado fijo
-    $certForm['tipo_certificado'] = 'certificadogeneral';
+    $tipoCertificadoPost = trim((string) ($_POST['tipo_certificado'] ?? ''));
+    $certForm['tipo_certificado'] = in_array($tipoCertificadoPost, ['certificadogeneral', 'certificadoinase'], true)
+        ? $tipoCertificadoPost
+        : 'certificadogeneral';
     $certForm['id_cliente_certificado'] = trim((string) ($_POST['id_cliente_certificado'] ?? ''));
     $certForm['id_especie_certificado'] = trim((string) ($_POST['id_especie_certificado'] ?? ''));
     $certForm['id_cultivar_certificado'] = trim((string) ($_POST['id_cultivar_certificado'] ?? ''));
@@ -1382,6 +1738,7 @@ if (is_logged_in() && $_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['sav
             $successMessage = 'Certificado dado de alta correctamente.';
             $_SESSION['success_message'] = $successMessage;
             $_SESSION['new_certificado_id'] = $newCertificadoId;
+            $certPageDestino = $certForm['tipo_certificado'] === 'certificadoinase' ? 'CertificadoINASE' : 'Certificadogeneral';
             $certForm = [
                 'tipo_certificado' => '',
                 'id_cliente_certificado' => '',
@@ -1423,8 +1780,8 @@ if (is_logged_in() && $_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['sav
                 'otras_semillas_certificado' => '',
             ];
 
-            if (($page ?? 'dashboard') !== 'Certificadogeneral') {
-                header('Location: /index.php?page=Certificadogeneral');
+            if (($page ?? 'dashboard') !== $certPageDestino) {
+                header('Location: /index.php?page=' . $certPageDestino);
                 exit;
             }
         } catch (Throwable $throwable) {
@@ -1442,267 +1799,99 @@ if (is_logged_in() && isset($_GET['pdf'])) {
         exit;
     }
 
-    try {
-        $pdfStatement = db()->prepare(
-            'SELECT c.*, cl.nombre_cliente, e.nombre_especie, e.cientifico_especie, cu.nombre_cultivar
-            FROM certificados c
-            LEFT JOIN clientes cl ON cl.id_cliente = c.id_cliente_certificado
-            LEFT JOIN especies e ON e.id_especie = c.id_especie_certificado
-            LEFT JOIN cultivares cu ON cu.id_cultivar = c.id_cultivar_certificado
-            WHERE c.id_certificado = :id AND c.id_empresa = :id_empresa
-            LIMIT 1'
-        );
-        $pdfStatement->execute([':id' => $certificadoId, ':id_empresa' => current_empresa_id()]);
-        $certificadoPdf = $pdfStatement->fetch();
+    $pdfResult = build_certificado_pdf($certificadoId);
 
-        $detNombresStatement = db()->prepare(
-            'SELECT od.nombre_determinacion
-            FROM certificado_determinaciones cd
-            JOIN otras_determinaciones od ON od.id_determinacion = cd.id_determinacion
-            WHERE cd.id_certificado = :id
-            ORDER BY od.nombre_determinacion ASC'
-        );
-        $detNombresStatement->execute([':id' => $certificadoId]);
-        $detNombres = $detNombresStatement->fetchAll(PDO::FETCH_COLUMN);
-    } catch (Throwable $throwable) {
-        http_response_code(500);
-        echo 'No fue posible obtener el certificado.';
-        exit;
-    }
-
-    if ($certificadoPdf === false) {
+    if ($pdfResult === null) {
         http_response_code(404);
         echo 'Certificado no encontrado.';
         exit;
     }
 
-    require_once __DIR__ . '/vendor/autoload.php';
-
-    $cliente = format_text_value($certificadoPdf['nombre_cliente'] ?? '');
-    $especie = format_text_value($certificadoPdf['nombre_especie'] ?? '');
-    $cultivar = trim((string) ($certificadoPdf['nombre_cultivar'] ?? ''));
-    $especieCultivar = trim($especie . ($cultivar !== '' ? ' / ' . $cultivar : ''));
-    $especieCientifico = format_text_value($certificadoPdf['cientifico_especie'] ?? '');
-    $localidad = format_text_value($certificadoPdf['localidad_pais_certificado'] ?? '----------------', '----------------');
-    // Escapar cada elemento individualmente
-    $detNombresEscapados = array_map(function ($item) {
-        return htmlspecialchars($item, ENT_QUOTES, 'UTF-8');
-    }, $detNombres);
-
-    // Unir con <br> (ya escapados)
-    $otrasDet = implode('<br>', $detNombresEscapados);
-    $otrasDetTexto = trim((string) ($certificadoPdf['otras_determinaciones_texto_certificado'] ?? ''));
-
-    if ($otrasDetTexto !== '') {
-        $textoEscapado = htmlspecialchars($otrasDetTexto, ENT_QUOTES, 'UTF-8');
-        $otrasDet = $otrasDet !== '' ? $otrasDet . '<br>' . $textoEscapado : $textoEscapado;
-    }
-    $certificateSettings = get_certificate_settings(current_empresa_id());
-    $claseMateria = trim((string) ($certificadoPdf['clase_materia_inerte_certificado'] ?? ''));
-    $otrasSemillasTxt = trim((string) ($certificadoPdf['otras_semillas_certificado'] ?? ''));
-    $amparaTotalidadLote = trim((string) ($certificadoPdf['ampara_totalidad_lote_certificado'] ?? 'N'));
-    $amparaSi = $amparaTotalidadLote === 'S' ? 'X' : ' ';
-    $amparaNo = $amparaTotalidadLote === 'N' ? 'X' : ' ';
-    $detalleDeterminaciones = $otrasDet !== '' ? $otrasDet : 'N';
-
-    $membreteImagePath = certificate_logo_path(current_empresa_id());
-    $brandHeaderHtml = '';
-
-    if ($membreteImagePath !== null && is_file($membreteImagePath)) {
-        $membreteImagePathNormalized = str_replace('\\', '/', $membreteImagePath);
-        $brandHeaderHtml = '<div class="center brand"><img src="'
-            . htmlspecialchars($membreteImagePathNormalized, ENT_QUOTES, 'UTF-8')
-            . '" alt="Logo del laboratorio" class="brand-image"></div>';
-    }
-
-    $html = '
-    <html>
-    <head>
-        <style>
-            body { font-family: serif; font-size: 14px; color: #222; }
-            .cert { width: 100%; border-collapse: collapse; }
-            .center { text-align: center; }
-            .right { text-align: right; }
-            .bold { font-weight: 700; }
-            .title { font-size: 42px; font-weight: 700; letter-spacing: 1px; margin-top: 2px; }
-            .subtitle { font-size: 13px; line-height: 1.15; }
-            .brand { margin: 0 auto 4px; text-align: center; }
-            .brand-image { width: 102mm; max-width: 100%; height: auto; }
-            .brand-logo { width: 62px; height: 62px; background: #4a5c2f; border: 1px solid #404040; display: inline-block; vertical-align: top; margin-right: 8px; }
-            .brand-text { display: inline-block; vertical-align: top; text-align: left; }
-            .brand-main { font-size: 12px; font-weight: 700; line-height: 1.2; margin-top: 1px; }
-            .brand-sub { font-size: 10px; letter-spacing: 4px; color: #6f7f40; margin-top: 3px; font-weight: 700; }
-            .brand-rule { height: 1px; background: #7f8f48; margin-top: 2px; width: 168px; }
-            .section { margin-top: 8px; }
-            .heading { background: #d8d8d8; border: 1px solid #666; font-size: 11px; font-weight: 700; text-align: center; padding: 5px 0; }
-            table.grid { width: 100%; border-collapse: collapse; }
-            table.grid td, table.grid th { border: 1px solid #666; padding: 4px 5px; text-align: center; vertical-align: middle; }
-            table.grid .left { text-align: left; }
-            .pg-highlight { background: #fdecec; }
-            .small { font-size: 9px; }
-            .mid { font-size: 10px; }
-            .line-label { margin-top: 6px; border-top: 1px solid #333; padding-top: 4px; font-size: 11px; font-weight: 700; }
-            .line-value { font-size: 11px; font-weight: 400; }
-            .footer { margin-top: 8px; font-size: 10px; }
-            .phone { text-align: center; font-size: 10px; letter-spacing: 1px; margin-top: 6px; }
-            .address { text-align: center; font-size: 10px; letter-spacing: 1px; }
-            .si-no { font-size: 13px; letter-spacing: 1px; font-weight: 700; margin: 9px 0 5px; }
-        </style>
-    </head>
-    <body>' . $brandHeaderHtml . '
-
-        <div class="center title">CERTIFICADO DE ANÁLISIS</div>
-        <div class="center subtitle">Laboratorio inscripto en el Registro Nacional de Comercio y Fiscalización de Semillas I/8008</div>
-        <div class="center subtitle">Certificado de Análisis fuera del alcance de la acreditación otorgada por INASE</div>
-
-        <div class="section heading">INFORMACIÓN DEL SOLICITANTE</div>
-        <table class="grid">
-            <tr>
-                <td class="left" colspan="2"><span class="bold">Nombre del Solicitante:</span> ' . htmlspecialchars($cliente, ENT_QUOTES, 'UTF-8') . '</td>
-                <td class="left" colspan="2"><span class="bold">Marca y N° de Lote:</span> ' . htmlspecialchars((string) ($certificadoPdf['marca_lote_certificado'] ?? ''), ENT_QUOTES, 'UTF-8') . '</td>
-            </tr>
-            <tr>
-                <td class="left" colspan="4"><span class="bold">Especie/ Cultivar/ Categoría:</span> ' . htmlspecialchars($especieCultivar, ENT_QUOTES, 'UTF-8') . '</td>
-            </tr>
-            <tr class="bold">
-                <td>PESO DEL LOTE</td>
-                <td>N° DE ENVASES</td>
-                <td>FECHA DE MUESTREO</td>
-                <td>OTRAS REFERENCIAS</td>
-            </tr>
-            <tr>
-                <td>' . htmlspecialchars(format_text_value($certificadoPdf['peso_certificado'] ?? '----------------', '----------------'), ENT_QUOTES, 'UTF-8') . '</td>
-                <td>' . htmlspecialchars(format_text_value($certificadoPdf['nro_envases_certificado'] ?? '----------------', '----------------'), ENT_QUOTES, 'UTF-8') . '</td>
-                <td>' . htmlspecialchars(format_date_short((string) ($certificadoPdf['fecha_muestreo_certificado'] ?? '')), ENT_QUOTES, 'UTF-8') . '</td>
-                <td>' . htmlspecialchars(format_text_value($certificadoPdf['otras_referencias_certificado'] ?? '----------------', '----------------'), ENT_QUOTES, 'UTF-8') . '</td>
-            </tr>
-            <tr class="bold">
-                <td>N° DE PRECINTO</td>
-                <td>FECHA DE RECEPCIÓN<br>DE MUESTRAS</td>
-                <td>FECHA DE FINALIZACIÓN<br>DE LOS ENSAYOS</td>
-                <td>N° DE ANÁLISIS</td>
-            </tr>
-            <tr>
-                <td>' . htmlspecialchars(format_text_value($certificadoPdf['precinto_certificado'] ?? '----------------', '----------------'), ENT_QUOTES, 'UTF-8') . '</td>
-                <td>' . htmlspecialchars(format_date_short((string) ($certificadoPdf['fecha_muestras_certificado'] ?? '')), ENT_QUOTES, 'UTF-8') . '</td>
-                <td>' . htmlspecialchars(format_date_short((string) ($certificadoPdf['fecha_finalizacion_ensayos_certificado'] ?? '')), ENT_QUOTES, 'UTF-8') . '</td>
-                <td>' . htmlspecialchars(format_text_value($certificadoPdf['nro_analisis_certificado'] ?? '----------------', '----------------'), ENT_QUOTES, 'UTF-8') . '</td>
-            </tr>
-        </table>
-
-        <div class="section heading">RESULTADOS LOS ANÁLISIS</div>
-        <table class="grid">
-            <tr>
-                <td class="left" colspan="11"><span class="bold">Especie (Nombre Científico):</span> <em>' . htmlspecialchars($especieCientifico, ENT_QUOTES, 'UTF-8') . '</em></td>
-            </tr>
-            <tr class="bold">
-                <td colspan="3">PUREZA<br><span class="small">(% en peso)</span></td>
-                <td colspan="6">PODER GERMINATIVO<br><span class="small">(% en número)</span></td>
-                <td colspan="2">CONTENIDO DE HUMEDAD<br><span class="small">(%)</span></td>
-            </tr>
-            <tr class="bold mid">
-                <td>Semilla<br>Pura</td>
-                <td>Materia<br>Inerte</td>
-                <td>Otras<br>Semillas</td>
-                <td>Número<br>de Días</td>
-                <td>Plántulas<br>Normales</td>
-                <td>Semillas<br>Duras</td>
-                <td>Semillas<br>Frescas</td>
-                <td>Plántulas<br>Anormales</td>
-                <td>Semillas<br>Muertas</td>
-                <td colspan="2">Contenido<br>de Humedad</td>
-            </tr>
-            <tr>
-                <td>' . htmlspecialchars(format_percent_value($certificadoPdf['pureza_semilla_pura_certificado'] ?? null), ENT_QUOTES, 'UTF-8') . '</td>
-                <td>' . htmlspecialchars(format_percent_value($certificadoPdf['materia_inerte_certificado'] ?? null), ENT_QUOTES, 'UTF-8') . '</td>
-                <td>' . htmlspecialchars(format_percent_value($certificadoPdf['pureza_otras_semillas_certificado'] ?? null), ENT_QUOTES, 'UTF-8') . '</td>
-                <td>' . htmlspecialchars(format_text_value($certificadoPdf['pg_numero_dias_certificado'] ?? ''), ENT_QUOTES, 'UTF-8') . '</td>
-                <td class="pg-highlight">' . htmlspecialchars(format_percent_value($certificadoPdf['pg_plantulas_normales_certificado'] ?? null), ENT_QUOTES, 'UTF-8') . '</td>
-                <td>' . htmlspecialchars(format_percent_value($certificadoPdf['pg_semillas_duras_certificado'] ?? null), ENT_QUOTES, 'UTF-8') . '</td>
-                <td>' . htmlspecialchars(format_percent_value($certificadoPdf['pg_semillas_frescas_certificado'] ?? null), ENT_QUOTES, 'UTF-8') . '</td>
-                <td>' . htmlspecialchars(format_percent_value($certificadoPdf['pg_plantulas_anormales_certificado'] ?? null), ENT_QUOTES, 'UTF-8') . '</td>
-                <td>' . htmlspecialchars(format_percent_value($certificadoPdf['pg_semillas_muertas_certificado'] ?? null), ENT_QUOTES, 'UTF-8') . '</td>
-                <td colspan="2">' . htmlspecialchars(format_percent_value($certificadoPdf['pg_contenido_humedad_certificado'] ?? null), ENT_QUOTES, 'UTF-8') . '</td>
-            </tr>
-        </table>
-
-        <table class="grid" style="margin-top:4px;">
-            <tr class="bold">
-                <td colspan="6">PODER GERMINATIVO CURADO<br><span class="small">(% en número)</span></td>
-                <td colspan="4">VIGOR: COLD TEST (PRUEBA DE FRÍO)<br><span class="small">(% en número)</span></td>
-            </tr>
-            <tr class="bold mid">
-                <td>Número<br>de Días</td>
-                <td>Plántulas<br>Normales</td>
-                <td>Semillas<br>Duras</td>
-                <td>Semillas<br>Frescas</td>
-                <td>Plántulas<br>Anormales</td>
-                <td>Semillas<br>Muertas</td>
-                <td>Número<br>de Días</td>
-                <td colspan="3">Plántulas Normales</td>
-            </tr>
-            <tr>
-                <td>' . htmlspecialchars(format_text_value($certificadoPdf['pgc_numero_dias_certificado'] ?? ''), ENT_QUOTES, 'UTF-8') . '</td>
-                <td class="pg-highlight">' . htmlspecialchars(format_percent_value($certificadoPdf['pgc_plantulas_normales_certificado'] ?? null), ENT_QUOTES, 'UTF-8') . '</td>
-                <td>' . htmlspecialchars(format_percent_value($certificadoPdf['pgc_semillas_duras_certificado'] ?? null), ENT_QUOTES, 'UTF-8') . '</td>
-                <td>' . htmlspecialchars(format_percent_value($certificadoPdf['pgc_semillas_frescas_certificado'] ?? null), ENT_QUOTES, 'UTF-8') . '</td>
-                <td>' . htmlspecialchars(format_percent_value($certificadoPdf['pgc_plantulas_anormales_certificado'] ?? null), ENT_QUOTES, 'UTF-8') . '</td>
-                <td>' . htmlspecialchars(format_percent_value($certificadoPdf['pgc_semillas_muertas_certificado'] ?? null), ENT_QUOTES, 'UTF-8') . '</td>
-                <td>' . htmlspecialchars(format_text_value($certificadoPdf['vigor_nro_dias_certificado'] ?? ''), ENT_QUOTES, 'UTF-8') . '</td>
-                <td class="pg-highlight" colspan="3">' . htmlspecialchars(format_percent_value($certificadoPdf['vigor_plantulas_normales_certificado'] ?? null), ENT_QUOTES, 'UTF-8') . '</td>
-            </tr>
-        </table>
-
-        <div class="line-label">Clase de Materia Inerte: <span class="line-value">' . htmlspecialchars(format_text_value($certificadoPdf['clase_materia_inerte_certificado'] ?? '', ' '), ENT_QUOTES, 'UTF-8') . '</span></div>
-        <div class="line-label">Otras Semillas: <span class="line-value">' . htmlspecialchars(format_text_value($certificadoPdf['otras_semillas_certificado'] ?? '', ' '), ENT_QUOTES, 'UTF-8') . '</span></div>
-        <div class="line-label">Otras Determinaciones: <span class="line-value">' . $detalleDeterminaciones . '</span></div>
-
-        <div class="si-no left">ESTE CERTIFICADO &nbsp;&nbsp; SI [' . $amparaSi . '] &nbsp;&nbsp; NO [' . $amparaNo . '] &nbsp;&nbsp; AMPARA LA TOTALIDAD DEL LOTE</div>
-        
-    </body>
-    </html>';
-
-    //------------------------------------------------
-    $footerHtml = '
-    <table class="grid footer" style="width:100%; border-collapse: collapse;">
-        <tr class="bold">
-            <td style="border:1px solid #666; padding:4px 5px; text-align:center;">Localidad y País</td>
-            <td style="border:1px solid #666; padding:4px 5px; text-align:center;">Fecha de Emisión</td>
-            <td style="border:1px solid #666; padding:4px 5px; text-align:center;">Firma del Director Técnico</td>
-        </tr>
-        <tr>
-            <td style="border:1px solid #666; padding:4px 5px; height:54px; text-align:center;">' . htmlspecialchars($certificateSettings['localidad_pais'], ENT_QUOTES, 'UTF-8') . '</td>
-            <td style="border:1px solid #666; padding:4px 5px; text-align:center;">' . htmlspecialchars(format_date_long_spanish((string) ($certificadoPdf['fecha_emision_certificado'] ?? '')), ENT_QUOTES, 'UTF-8') . '</td>
-            <td style="border:1px solid #666; padding:4px 5px 5px; text-align:center; vertical-align:bottom;">' . htmlspecialchars($certificateSettings['firma_director_tecnico'], ENT_QUOTES, 'UTF-8') . '</td>
-        </tr>
-    </table>
-    <div class="phone" style="text-align:center; font-size:10px; letter-spacing:1px; margin-top:6px;">TELÉFONO 2346-316003</div>
-    <div class="address" style="text-align:center; font-size:10px; letter-spacing:1px;">SAN LORENZO N° 341 | CHIVILCOY (6620) BUENOS AIRES</div>
-    ';
-    //------------------------------------------------
-
-    $mpdf = new \Mpdf\Mpdf([
-        'format' => 'A4',
-        'margin_left' => 10,
-        'margin_right' => 10,
-        'margin_top' => 8,
-        'margin_bottom' => 30, //5
-    ]);
-    $mpdf->SetHTMLFooter($footerHtml);
-    $mpdf->WriteHTML($html);
-
-    $pdfFilename = 'certificado_' . $certificadoId . '.pdf';
-    $pdfContent = $mpdf->Output($pdfFilename, \Mpdf\Output\Destination::STRING_RETURN);
-
-    $certificadosDir = empresa_storage_dir(current_empresa_id());
-    if (is_dir($certificadosDir) && is_writable($certificadosDir)) {
-        @file_put_contents(rtrim($certificadosDir, '\\/') . DIRECTORY_SEPARATOR . $pdfFilename, $pdfContent);
-    }
-
+    $pdfDisposition = isset($_GET['download']) ? 'attachment' : 'inline';
     header('Content-Type: application/pdf');
-    header('Content-Disposition: inline; filename="' . $pdfFilename . '"');
-    header('Content-Length: ' . strlen($pdfContent));
-    echo $pdfContent;
+    header('Content-Disposition: ' . $pdfDisposition . '; filename="' . $pdfResult['filename'] . '"');
+    header('Content-Length: ' . strlen($pdfResult['content']));
+    header('Cache-Control: no-store, no-cache, must-revalidate, max-age=0');
+    header('Pragma: no-cache');
+    echo $pdfResult['content'];
+    exit;
+}
+
+if (is_logged_in() && $_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['enviar_certificado_email'])) {
+    header('Content-Type: application/json; charset=utf-8');
+    // Envío de certificados por email deshabilitado temporalmente.
+    echo json_encode(['ok' => false, 'error' => 'El envío de certificados por email está deshabilitado por el momento.']);
+    exit;
+
+    $certificadoId = filter_var($_POST['certificado_id'] ?? '', FILTER_VALIDATE_INT, ['options' => ['min_range' => 1]]);
+    $destinatarios = normalize_client_emails($_POST['destinatarios'] ?? []);
+
+    if ($certificadoId === false) {
+        echo json_encode(['ok' => false, 'error' => 'Certificado inválido.']);
+        exit;
+    }
+
+    if ($destinatarios === []) {
+        echo json_encode(['ok' => false, 'error' => 'Selecciona al menos un email destinatario.']);
+        exit;
+    }
+
+    foreach ($destinatarios as $destinatario) {
+        if (!filter_var($destinatario, FILTER_VALIDATE_EMAIL)) {
+            echo json_encode(['ok' => false, 'error' => 'Uno de los emails destinatario no es válido.']);
+            exit;
+        }
+    }
+
+    $checkStatement = db()->prepare('SELECT id_certificado FROM certificados WHERE id_certificado = :id AND id_empresa = :id_empresa LIMIT 1');
+    $checkStatement->execute([':id' => $certificadoId, ':id_empresa' => current_empresa_id()]);
+    if ($checkStatement->fetch() === false) {
+        echo json_encode(['ok' => false, 'error' => 'Certificado no encontrado.']);
+        exit;
+    }
+
+    $smtpSettings = get_smtp_settings(current_empresa_id());
+    if (!smtp_is_configured($smtpSettings)) {
+        echo json_encode(['ok' => false, 'error' => 'La empresa no tiene configurado el envío de correo (ver Configuración).']);
+        exit;
+    }
+
+    $pdfResult = build_certificado_pdf($certificadoId);
+    if ($pdfResult === null) {
+        echo json_encode(['ok' => false, 'error' => 'No fue posible generar el PDF del certificado.']);
+        exit;
+    }
+
+    try {
+        $mailer = new \PHPMailer\PHPMailer\PHPMailer(true);
+        $mailer->isSMTP();
+        $mailer->Host = $smtpSettings['host'];
+        $mailer->Port = (int) ($smtpSettings['port'] !== '' ? $smtpSettings['port'] : 587);
+        $mailer->SMTPAuth = true;
+        $mailer->Username = $smtpSettings['usuario'];
+        $mailer->Password = $smtpSettings['password'];
+        if ($smtpSettings['seguridad'] === 'ssl') {
+            $mailer->SMTPSecure = \PHPMailer\PHPMailer\PHPMailer::ENCRYPTION_SMTPS;
+        } elseif ($smtpSettings['seguridad'] === 'tls') {
+            $mailer->SMTPSecure = \PHPMailer\PHPMailer\PHPMailer::ENCRYPTION_STARTTLS;
+        } else {
+            $mailer->SMTPAutoTLS = false;
+        }
+        $mailer->CharSet = 'UTF-8';
+        $mailer->setFrom($smtpSettings['remitente_email'], $smtpSettings['remitente_nombre'] !== '' ? $smtpSettings['remitente_nombre'] : APP_NAME);
+        foreach ($destinatarios as $destinatario) {
+            $mailer->addAddress($destinatario);
+        }
+        $mailer->Subject = 'Certificado de análisis N° ' . $certificadoId;
+        $mailer->isHTML(true);
+        $mailer->Body = '<p>Adjuntamos el certificado de análisis solicitado.</p>';
+        $mailer->addStringAttachment($pdfResult['content'], $pdfResult['filename'], 'base64', 'application/pdf');
+        $mailer->send();
+
+        echo json_encode(['ok' => true]);
+    } catch (Throwable $throwable) {
+        echo json_encode(['ok' => false, 'error' => 'No fue posible enviar el email: ' . $throwable->getMessage()]);
+    }
     exit;
 }
 
@@ -1928,7 +2117,8 @@ $cultivaresOptions = [];
 $determinacionesOptions = [];
 $certificados = [];
 
-if (is_logged_in() && ($page ?? 'dashboard') === 'Certificadogeneral') {
+if (is_logged_in() && in_array(($page ?? 'dashboard'), ['Certificadogeneral', 'CertificadoINASE'], true)) {
+    $certTipoActual = ($page ?? 'dashboard') === 'CertificadoINASE' ? 'certificadoinase' : 'certificadogeneral';
     try {
         $clientesOptionsStatement = db()->prepare('SELECT id_cliente, nombre_cliente FROM clientes WHERE id_empresa = :id_empresa ORDER BY nombre_cliente ASC');
         $clientesOptionsStatement->execute([':id_empresa' => current_empresa_id()]);
@@ -1966,8 +2156,8 @@ if (is_logged_in() && ($page ?? 'dashboard') === 'Certificadogeneral') {
     $certFilter['fecha_desde'] = trim((string) ($_GET['filtro_fecha_desde'] ?? ''));
     $certFilter['fecha_hasta'] = trim((string) ($_GET['filtro_fecha_hasta'] ?? ''));
 
-    $certConditions = ['c.id_empresa = :id_empresa'];
-    $certParams = [':id_empresa' => current_empresa_id()];
+    $certConditions = ['c.id_empresa = :id_empresa', 'c.tipo_certificado = :cert_tipo_actual'];
+    $certParams = [':id_empresa' => current_empresa_id(), ':cert_tipo_actual' => $certTipoActual];
 
     $filterClienteId = filter_var($certFilter['id_cliente'], FILTER_VALIDATE_INT, ['options' => ['min_range' => 1]]);
     if ($filterClienteId !== false) {
@@ -2722,6 +2912,49 @@ $loggedUser = $_SESSION['user']['name'] ?? 'Usuario';
                                 <dd class="col-sm-8"><?php echo htmlspecialchars(empresa_storage_dir(current_empresa_id()), ENT_QUOTES, 'UTF-8'); ?></dd>
                             </dl>
                             <p class="text-muted small mb-0">Cada laboratorio tiene su propia carpeta de almacenamiento asignada automáticamente; no es configurable manualmente por razones de seguridad.</p>
+
+                            <?php $smtpSettings = get_smtp_settings(current_empresa_id()); ?>
+                            <hr class="my-4">
+                            <h3 class="h5">Configuración de correo (SMTP)</h3>
+                            <p class="text-muted small">Usada para enviar certificados por email. Si tu hosting incluye una casilla de correo del dominio (ej. DonWeb), usá su servidor SMTP autenticado.</p>
+                            <form method="post" class="row g-3 mt-1">
+                                <input type="hidden" name="save_smtp_config" value="1">
+                                <div class="col-md-6">
+                                    <label for="smtp_host" class="form-label">Servidor SMTP</label>
+                                    <input type="text" class="form-control" id="smtp_host" name="smtp_host" maxlength="255" placeholder="mail.tudominio.com" value="<?php echo htmlspecialchars($smtpSettings['host'], ENT_QUOTES, 'UTF-8'); ?>">
+                                </div>
+                                <div class="col-md-2">
+                                    <label for="smtp_port" class="form-label">Puerto</label>
+                                    <input type="number" class="form-control" id="smtp_port" name="smtp_port" min="1" max="65535" value="<?php echo htmlspecialchars($smtpSettings['port'], ENT_QUOTES, 'UTF-8'); ?>">
+                                </div>
+                                <div class="col-md-4">
+                                    <label for="smtp_seguridad" class="form-label">Seguridad</label>
+                                    <select class="form-select" id="smtp_seguridad" name="smtp_seguridad">
+                                        <option value="tls" <?php echo $smtpSettings['seguridad'] === 'tls' ? 'selected' : ''; ?>>STARTTLS (587)</option>
+                                        <option value="ssl" <?php echo $smtpSettings['seguridad'] === 'ssl' ? 'selected' : ''; ?>>SSL/TLS (465)</option>
+                                        <option value="none" <?php echo $smtpSettings['seguridad'] === 'none' ? 'selected' : ''; ?>>Ninguna</option>
+                                    </select>
+                                </div>
+                                <div class="col-md-6">
+                                    <label for="smtp_usuario" class="form-label">Usuario SMTP</label>
+                                    <input type="text" class="form-control" id="smtp_usuario" name="smtp_usuario" maxlength="255" placeholder="certificados@tudominio.com" value="<?php echo htmlspecialchars($smtpSettings['usuario'], ENT_QUOTES, 'UTF-8'); ?>">
+                                </div>
+                                <div class="col-md-6">
+                                    <label for="smtp_password" class="form-label">Contraseña <?php echo $smtpSettings['password'] !== '' ? '(dejar en blanco para no cambiarla)' : ''; ?></label>
+                                    <input type="password" class="form-control" id="smtp_password" name="smtp_password" autocomplete="new-password">
+                                </div>
+                                <div class="col-md-6">
+                                    <label for="smtp_remitente_email" class="form-label">Email remitente</label>
+                                    <input type="email" class="form-control" id="smtp_remitente_email" name="smtp_remitente_email" maxlength="255" value="<?php echo htmlspecialchars($smtpSettings['remitente_email'], ENT_QUOTES, 'UTF-8'); ?>">
+                                </div>
+                                <div class="col-md-6">
+                                    <label for="smtp_remitente_nombre" class="form-label">Nombre remitente</label>
+                                    <input type="text" class="form-control" id="smtp_remitente_nombre" name="smtp_remitente_nombre" maxlength="150" placeholder="<?php echo htmlspecialchars(APP_NAME, ENT_QUOTES, 'UTF-8'); ?>" value="<?php echo htmlspecialchars($smtpSettings['remitente_nombre'], ENT_QUOTES, 'UTF-8'); ?>">
+                                </div>
+                                <div class="col-12">
+                                    <button type="submit" class="btn btn-brand">Guardar configuración de correo</button>
+                                </div>
+                            </form>
                         </section>
                     <?php elseif ($page === 'empresas'): ?>
                         <section class="section-panel">
@@ -2842,7 +3075,7 @@ $loggedUser = $_SESSION['user']['name'] ?? 'Usuario';
                                 </table>
                             </div>
                         </section>
-                    <?php elseif ($page === 'Certificadogeneral'): ?>
+                    <?php elseif (in_array($page, ['Certificadogeneral', 'CertificadoINASE'], true)): ?>
                         <section class="section-panel">
                             <h2>Alta de certificado</h2>
                             <p>Completa los datos del análisis y guarda el certificado.</p>
@@ -2857,7 +3090,13 @@ $loggedUser = $_SESSION['user']['name'] ?? 'Usuario';
 
                             <?php if ($newCertificadoId !== null): ?>
                                 <script>
-                                    window.open('/index.php?pdf=<?php echo urlencode((string) $newCertificadoId); ?>', '_blank', 'noopener,noreferrer');
+                                    (function() {
+                                        const certificadoId = <?php echo json_encode((string) $newCertificadoId); ?>;
+                                        const downloadFrame = document.createElement('iframe');
+                                        downloadFrame.style.display = 'none';
+                                        downloadFrame.src = '/index.php?pdf=' + encodeURIComponent(certificadoId) + '&download=1';
+                                        document.body.appendChild(downloadFrame);
+                                    })();
                                 </script>
                             <?php endif; ?>
 
@@ -2866,7 +3105,7 @@ $loggedUser = $_SESSION['user']['name'] ?? 'Usuario';
                             <?php else: ?>
                                 <form method="post" class="row g-3 mt-1">
                                     <input type="hidden" name="save_certificado" value="1">
-                                    <input type="hidden" name="tipo_certificado" value="certificadogeneral">
+                                    <input type="hidden" name="tipo_certificado" value="<?php echo $page === 'CertificadoINASE' ? 'certificadoinase' : 'certificadogeneral'; ?>">
 
                                     <!-- Datos principales del certificado -->
                                     <div class="col-md-4">
@@ -2975,7 +3214,7 @@ $loggedUser = $_SESSION['user']['name'] ?? 'Usuario';
                                     </div>
 
                                     <hr class="my-4">
-                                    <h5>Poder Germinativo</h5>
+                                    <h5><?php echo $page === 'CertificadoINASE' ? 'Germinación' : 'Poder Germinativo'; ?></h5>
 
                                     <div class="col-md-2">
                                         <label for="pg_numero_dias_certificado" class="form-label">Días</label>
@@ -3012,51 +3251,53 @@ $loggedUser = $_SESSION['user']['name'] ?? 'Usuario';
                                         <input type="number" step="1" class="form-control" id="pg_contenido_humedad_certificado" name="pg_contenido_humedad_certificado" step="0.01" value="<?php echo htmlspecialchars($certForm['pg_contenido_humedad_certificado'], ENT_QUOTES, 'UTF-8'); ?>">
                                     </div>
 
-                                    <hr class="my-4">
-                                    <h5>Poder Germinativo Curado</h5>
+                                    <?php if ($page !== 'CertificadoINASE'): ?>
+                                        <hr class="my-4">
+                                        <h5>Poder Germinativo Curado</h5>
 
-                                    <div class="col-md-2">
-                                        <label for="pgc_numero_dias_certificado" class="form-label">Días</label>
-                                        <input type="number" step="1" class="form-control" id="pgc_numero_dias_certificado" name="pgc_numero_dias_certificado" value="<?php echo htmlspecialchars($certForm['pgc_numero_dias_certificado'], ENT_QUOTES, 'UTF-8'); ?>">
-                                    </div>
+                                        <div class="col-md-2">
+                                            <label for="pgc_numero_dias_certificado" class="form-label">Días</label>
+                                            <input type="number" step="1" class="form-control" id="pgc_numero_dias_certificado" name="pgc_numero_dias_certificado" value="<?php echo htmlspecialchars($certForm['pgc_numero_dias_certificado'], ENT_QUOTES, 'UTF-8'); ?>">
+                                        </div>
 
-                                    <div class="col-md-2">
-                                        <label for="pgc_plantulas_normales_certificado" class="form-label">Plántulas normales</label>
-                                        <input type="number" step="1" class="form-control" id="pgc_plantulas_normales_certificado" name="pgc_plantulas_normales_certificado" step="0.01" value="<?php echo htmlspecialchars($certForm['pgc_plantulas_normales_certificado'], ENT_QUOTES, 'UTF-8'); ?>">
-                                    </div>
+                                        <div class="col-md-2">
+                                            <label for="pgc_plantulas_normales_certificado" class="form-label">Plántulas normales</label>
+                                            <input type="number" step="1" class="form-control" id="pgc_plantulas_normales_certificado" name="pgc_plantulas_normales_certificado" step="0.01" value="<?php echo htmlspecialchars($certForm['pgc_plantulas_normales_certificado'], ENT_QUOTES, 'UTF-8'); ?>">
+                                        </div>
 
-                                    <div class="col-md-2">
-                                        <label for="pgc_semillas_duras_certificado" class="form-label">Semillas duras</label>
-                                        <input type="number" step="1" class="form-control" id="pgc_semillas_duras_certificado" name="pgc_semillas_duras_certificado" step="0.01" value="<?php echo htmlspecialchars($certForm['pgc_semillas_duras_certificado'], ENT_QUOTES, 'UTF-8'); ?>">
-                                    </div>
+                                        <div class="col-md-2">
+                                            <label for="pgc_semillas_duras_certificado" class="form-label">Semillas duras</label>
+                                            <input type="number" step="1" class="form-control" id="pgc_semillas_duras_certificado" name="pgc_semillas_duras_certificado" step="0.01" value="<?php echo htmlspecialchars($certForm['pgc_semillas_duras_certificado'], ENT_QUOTES, 'UTF-8'); ?>">
+                                        </div>
 
-                                    <div class="col-md-2">
-                                        <label for="pgc_semillas_frescas_certificado" class="form-label">Semillas frescas</label>
-                                        <input type="number" step="1" class="form-control" id="pgc_semillas_frescas_certificado" name="pgc_semillas_frescas_certificado" step="0.01" value="<?php echo htmlspecialchars($certForm['pgc_semillas_frescas_certificado'], ENT_QUOTES, 'UTF-8'); ?>">
-                                    </div>
+                                        <div class="col-md-2">
+                                            <label for="pgc_semillas_frescas_certificado" class="form-label">Semillas frescas</label>
+                                            <input type="number" step="1" class="form-control" id="pgc_semillas_frescas_certificado" name="pgc_semillas_frescas_certificado" step="0.01" value="<?php echo htmlspecialchars($certForm['pgc_semillas_frescas_certificado'], ENT_QUOTES, 'UTF-8'); ?>">
+                                        </div>
 
-                                    <div class="col-md-2">
-                                        <label for="pgc_plantulas_anormales_certificado" class="form-label">Plántulas anormales</label>
-                                        <input type="number" step="1" class="form-control" id="pgc_plantulas_anormales_certificado" name="pgc_plantulas_anormales_certificado" step="0.01" value="<?php echo htmlspecialchars($certForm['pgc_plantulas_anormales_certificado'], ENT_QUOTES, 'UTF-8'); ?>">
-                                    </div>
+                                        <div class="col-md-2">
+                                            <label for="pgc_plantulas_anormales_certificado" class="form-label">Plántulas anormales</label>
+                                            <input type="number" step="1" class="form-control" id="pgc_plantulas_anormales_certificado" name="pgc_plantulas_anormales_certificado" step="0.01" value="<?php echo htmlspecialchars($certForm['pgc_plantulas_anormales_certificado'], ENT_QUOTES, 'UTF-8'); ?>">
+                                        </div>
 
-                                    <div class="col-md-2">
-                                        <label for="pgc_semillas_muertas_certificado" class="form-label">Semillas muertas</label>
-                                        <input type="number" step="1" class="form-control" id="pgc_semillas_muertas_certificado" name="pgc_semillas_muertas_certificado" step="0.01" value="<?php echo htmlspecialchars($certForm['pgc_semillas_muertas_certificado'], ENT_QUOTES, 'UTF-8'); ?>">
-                                    </div>
+                                        <div class="col-md-2">
+                                            <label for="pgc_semillas_muertas_certificado" class="form-label">Semillas muertas</label>
+                                            <input type="number" step="1" class="form-control" id="pgc_semillas_muertas_certificado" name="pgc_semillas_muertas_certificado" step="0.01" value="<?php echo htmlspecialchars($certForm['pgc_semillas_muertas_certificado'], ENT_QUOTES, 'UTF-8'); ?>">
+                                        </div>
 
-                                    <hr class="my-4">
-                                    <h5>Vigor</h5>
+                                        <hr class="my-4">
+                                        <h5>Vigor</h5>
 
-                                    <div class="col-md-6">
-                                        <label for="vigor_nro_dias_certificado" class="form-label">Nro de días</label>
-                                        <input type="number" class="form-control" id="vigor_nro_dias_certificado" name="vigor_nro_dias_certificado" value="<?php echo htmlspecialchars($certForm['vigor_nro_dias_certificado'], ENT_QUOTES, 'UTF-8'); ?>">
-                                    </div>
+                                        <div class="col-md-6">
+                                            <label for="vigor_nro_dias_certificado" class="form-label">Nro de días</label>
+                                            <input type="number" class="form-control" id="vigor_nro_dias_certificado" name="vigor_nro_dias_certificado" value="<?php echo htmlspecialchars($certForm['vigor_nro_dias_certificado'], ENT_QUOTES, 'UTF-8'); ?>">
+                                        </div>
 
-                                    <div class="col-md-6">
-                                        <label for="vigor_plantulas_normales_certificado" class="form-label">Plántulas normales</label>
-                                        <input type="number" step="1" class="form-control" id="vigor_plantulas_normales_certificado" name="vigor_plantulas_normales_certificado" step="0.01" value="<?php echo htmlspecialchars($certForm['vigor_plantulas_normales_certificado'], ENT_QUOTES, 'UTF-8'); ?>">
-                                    </div>
+                                        <div class="col-md-6">
+                                            <label for="vigor_plantulas_normales_certificado" class="form-label">Plántulas normales</label>
+                                            <input type="number" step="1" class="form-control" id="vigor_plantulas_normales_certificado" name="vigor_plantulas_normales_certificado" step="0.01" value="<?php echo htmlspecialchars($certForm['vigor_plantulas_normales_certificado'], ENT_QUOTES, 'UTF-8'); ?>">
+                                        </div>
+                                    <?php endif; ?>
 
                                     <hr class="my-4">
 
@@ -3105,7 +3346,7 @@ $loggedUser = $_SESSION['user']['name'] ?? 'Usuario';
 
                                     <div class="col-12 d-flex gap-2">
                                         <button type="submit" class="btn btn-brand">Guardar certificado</button>
-                                        <a href="/index.php?page=Certificadogeneral" class="btn btn-outline-brand">Cancelar</a>
+                                        <a href="/index.php?page=<?php echo htmlspecialchars($page, ENT_QUOTES, 'UTF-8'); ?>" class="btn btn-outline-brand">Cancelar</a>
                                     </div>
                                 </form>
                             <?php endif; ?>
@@ -3116,7 +3357,7 @@ $loggedUser = $_SESSION['user']['name'] ?? 'Usuario';
                             <p>Listado de certificados guardados en la base de datos.</p>
 
                             <form method="get" class="row g-3 mb-3" action="/index.php#certificados-listado">
-                                <input type="hidden" name="page" value="Certificadogeneral">
+                                <input type="hidden" name="page" value="<?php echo htmlspecialchars($page, ENT_QUOTES, 'UTF-8'); ?>">
 
                                 <div class="col-md-3">
                                     <label for="filtro_cliente" class="form-label">Cliente</label>
@@ -3154,7 +3395,7 @@ $loggedUser = $_SESSION['user']['name'] ?? 'Usuario';
 
                                 <div class="col-md-2 d-flex align-items-end gap-2">
                                     <button type="submit" class="btn btn-brand w-100"><i class="bi bi-funnel"></i> Filtrar</button>
-                                    <a href="/index.php?page=Certificadogeneral#certificados-listado" class="btn btn-outline-brand" title="Limpiar filtros"><i class="bi bi-x-circle"></i></a>
+                                    <a href="/index.php?page=<?php echo htmlspecialchars($page, ENT_QUOTES, 'UTF-8'); ?>#certificados-listado" class="btn btn-outline-brand" title="Limpiar filtros"><i class="bi bi-x-circle"></i></a>
                                 </div>
                             </form>
 
@@ -3208,7 +3449,7 @@ $loggedUser = $_SESSION['user']['name'] ?? 'Usuario';
                                     <ul class="pagination pagination-sm mb-0 flex-wrap">
                                         <?php for ($certPageNumber = 1; $certPageNumber <= $certTotalPages; $certPageNumber++): ?>
                                             <?php
-                                            $certPageQuery = array_merge($_GET, ['page' => 'Certificadogeneral', 'cert_page' => $certPageNumber]);
+                                            $certPageQuery = array_merge($_GET, ['page' => $page, 'cert_page' => $certPageNumber]);
                                             $certPageUrl = '/index.php?' . http_build_query($certPageQuery) . '#certificados-listado';
                                             ?>
                                             <li class="page-item <?php echo $certPageNumber === $certPage ? 'active' : ''; ?>">
@@ -3230,6 +3471,26 @@ $loggedUser = $_SESSION['user']['name'] ?? 'Usuario';
                         </section>
                     <?php endif; ?>
                 </main>
+            </div>
+        </div>
+
+        <div class="modal fade" id="certificadoEmailModal" tabindex="-1" aria-hidden="true">
+            <div class="modal-dialog">
+                <div class="modal-content bg-dark text-light">
+                    <div class="modal-header">
+                        <h5 class="modal-title">Enviar certificado por email</h5>
+                        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Cerrar"></button>
+                    </div>
+                    <div class="modal-body">
+                        <p>El certificado se descargó automáticamente. ¿Querés además enviarlo por email al cliente?</p>
+                        <div id="certificadoEmailList" class="mb-3"></div>
+                        <div id="certificadoEmailFeedback"></div>
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-outline-brand" data-bs-dismiss="modal">Cerrar</button>
+                        <button type="button" class="btn btn-brand" id="certificadoEmailSendBtn">Enviar</button>
+                    </div>
+                </div>
             </div>
         </div>
     <?php endif; ?>
