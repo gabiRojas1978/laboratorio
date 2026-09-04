@@ -1585,6 +1585,36 @@ if (is_logged_in() && $_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['sav
         $errors[] = 'La opción de ampara totalidad del lote no es válida.';
     }
 
+    // Las medidas de los certificados no admiten valores negativos
+    $nonNegativeFields = [
+        'peso_certificado',
+        'nro_envases_certificado',
+        'pureza_semilla_pura_certificado',
+        'materia_inerte_certificado',
+        'pureza_otras_semillas_certificado',
+        'pg_numero_dias_certificado',
+        'pg_plantulas_normales_certificado',
+        'pg_semillas_duras_certificado',
+        'pg_semillas_frescas_certificado',
+        'pg_plantulas_anormales_certificado',
+        'pg_semillas_muertas_certificado',
+        'pg_contenido_humedad_certificado',
+        'pgc_numero_dias_certificado',
+        'pgc_plantulas_normales_certificado',
+        'pgc_semillas_duras_certificado',
+        'pgc_semillas_frescas_certificado',
+        'pgc_plantulas_anormales_certificado',
+        'pgc_semillas_muertas_certificado',
+        'vigor_nro_dias_certificado',
+        'vigor_plantulas_normales_certificado',
+    ];
+    foreach ($nonNegativeFields as $nonNegativeField) {
+        if ($certForm[$nonNegativeField] !== '' && (float) $certForm[$nonNegativeField] < 0) {
+            $errors[] = 'Las medidas del certificado no pueden ser negativas.';
+            break;
+        }
+    }
+
     $clientId = filter_var($certForm['id_cliente_certificado'], FILTER_VALIDATE_INT, ['options' => ['min_range' => 1]]);
     $speciesId = filter_var($certForm['id_especie_certificado'], FILTER_VALIDATE_INT, ['options' => ['min_range' => 1]]);
     $cultivarRawId = trim((string) ($certForm['id_cultivar_certificado'] ?? ''));
@@ -3221,12 +3251,12 @@ $loggedUser = $_SESSION['user']['name'] ?? 'Usuario';
 
                                     <div class="col-md-4">
                                         <label for="peso_certificado" class="form-label">Peso (kg)</label>
-                                        <input type="number" class="form-control" id="peso_certificado" name="peso_certificado" step="0.01" value="<?php echo htmlspecialchars($certForm['peso_certificado'], ENT_QUOTES, 'UTF-8'); ?>">
+                                        <input type="number" class="form-control" id="peso_certificado" name="peso_certificado" step="0.01" min="0" value="<?php echo htmlspecialchars($certForm['peso_certificado'], ENT_QUOTES, 'UTF-8'); ?>">
                                     </div>
 
                                     <div class="col-md-4">
                                         <label for="nro_envases_certificado" class="form-label">Nro de envases</label>
-                                        <input type="number" class="form-control" id="nro_envases_certificado" name="nro_envases_certificado" value="<?php echo htmlspecialchars($certForm['nro_envases_certificado'], ENT_QUOTES, 'UTF-8'); ?>">
+                                        <input type="number" class="form-control" id="nro_envases_certificado" name="nro_envases_certificado" min="0" value="<?php echo htmlspecialchars($certForm['nro_envases_certificado'], ENT_QUOTES, 'UTF-8'); ?>">
                                     </div>
 
                                     <div class="col-md-4">
@@ -3267,17 +3297,17 @@ $loggedUser = $_SESSION['user']['name'] ?? 'Usuario';
 
                                     <div class="col-md-3">
                                         <label for="pureza_semilla_pura_certificado" class="form-label">Semilla pura</label>
-                                        <input type="number" class="form-control" id="pureza_semilla_pura_certificado" name="pureza_semilla_pura_certificado" step="0.01" value="<?php echo htmlspecialchars($certForm['pureza_semilla_pura_certificado'], ENT_QUOTES, 'UTF-8'); ?>">
+                                        <input type="number" class="form-control" id="pureza_semilla_pura_certificado" name="pureza_semilla_pura_certificado" step="0.01" min="0" value="<?php echo htmlspecialchars($certForm['pureza_semilla_pura_certificado'], ENT_QUOTES, 'UTF-8'); ?>">
                                     </div>
 
                                     <div class="col-md-3">
                                         <label for="materia_inerte_certificado" class="form-label">Materia inerte</label>
-                                        <input type="number" class="form-control" id="materia_inerte_certificado" name="materia_inerte_certificado" step="0.01" value="<?php echo htmlspecialchars($certForm['materia_inerte_certificado'], ENT_QUOTES, 'UTF-8'); ?>">
+                                        <input type="number" class="form-control" id="materia_inerte_certificado" name="materia_inerte_certificado" step="0.01" min="0" value="<?php echo htmlspecialchars($certForm['materia_inerte_certificado'], ENT_QUOTES, 'UTF-8'); ?>">
                                     </div>
 
                                     <div class="col-md-3">
                                         <label for="pureza_otras_semillas_certificado" class="form-label">Otras semillas</label>
-                                        <input type="number" class="form-control" id="pureza_otras_semillas_certificado" name="pureza_otras_semillas_certificado" step="0.01" value="<?php echo htmlspecialchars($certForm['pureza_otras_semillas_certificado'], ENT_QUOTES, 'UTF-8'); ?>">
+                                        <input type="number" class="form-control" id="pureza_otras_semillas_certificado" name="pureza_otras_semillas_certificado" step="0.01" min="0" value="<?php echo htmlspecialchars($certForm['pureza_otras_semillas_certificado'], ENT_QUOTES, 'UTF-8'); ?>">
                                     </div>
 
                                     <hr class="my-4">
@@ -3285,37 +3315,37 @@ $loggedUser = $_SESSION['user']['name'] ?? 'Usuario';
 
                                     <div class="col-md-2">
                                         <label for="pg_numero_dias_certificado" class="form-label">Días</label>
-                                        <input type="number" step="1" class="form-control" id="pg_numero_dias_certificado" name="pg_numero_dias_certificado" value="<?php echo htmlspecialchars($certForm['pg_numero_dias_certificado'], ENT_QUOTES, 'UTF-8'); ?>">
+                                        <input type="number" step="1" min="0" class="form-control" id="pg_numero_dias_certificado" name="pg_numero_dias_certificado" value="<?php echo htmlspecialchars($certForm['pg_numero_dias_certificado'], ENT_QUOTES, 'UTF-8'); ?>">
                                     </div>
 
                                     <div class="col-md-2">
                                         <label for="pg_plantulas_normales_certificado" class="form-label">Plántulas normales</label>
-                                        <input type="number" step="1" class="form-control" id="pg_plantulas_normales_certificado" name="pg_plantulas_normales_certificado" step="0.01" value="<?php echo htmlspecialchars($certForm['pg_plantulas_normales_certificado'], ENT_QUOTES, 'UTF-8'); ?>">
+                                        <input type="number" step="0.01" min="0" class="form-control" id="pg_plantulas_normales_certificado" name="pg_plantulas_normales_certificado" value="<?php echo htmlspecialchars($certForm['pg_plantulas_normales_certificado'], ENT_QUOTES, 'UTF-8'); ?>">
                                     </div>
 
                                     <div class="col-md-2">
                                         <label for="pg_semillas_duras_certificado" class="form-label">Semillas duras</label>
-                                        <input type="number" step="1" class="form-control" id="pg_semillas_duras_certificado" name="pg_semillas_duras_certificado" step="0.01" value="<?php echo htmlspecialchars($certForm['pg_semillas_duras_certificado'], ENT_QUOTES, 'UTF-8'); ?>">
+                                        <input type="number" step="0.01" min="0" class="form-control" id="pg_semillas_duras_certificado" name="pg_semillas_duras_certificado" value="<?php echo htmlspecialchars($certForm['pg_semillas_duras_certificado'], ENT_QUOTES, 'UTF-8'); ?>">
                                     </div>
 
                                     <div class="col-md-2">
                                         <label for="pg_semillas_frescas_certificado" class="form-label">Semillas frescas</label>
-                                        <input type="number" step="1" class="form-control" id="pg_semillas_frescas_certificado" name="pg_semillas_frescas_certificado" step="0.01" value="<?php echo htmlspecialchars($certForm['pg_semillas_frescas_certificado'], ENT_QUOTES, 'UTF-8'); ?>">
+                                        <input type="number" step="0.01" min="0" class="form-control" id="pg_semillas_frescas_certificado" name="pg_semillas_frescas_certificado" value="<?php echo htmlspecialchars($certForm['pg_semillas_frescas_certificado'], ENT_QUOTES, 'UTF-8'); ?>">
                                     </div>
 
                                     <div class="col-md-2">
                                         <label for="pg_plantulas_anormales_certificado" class="form-label">Plántulas anormales</label>
-                                        <input type="number" step="1" class="form-control" id="pg_plantulas_anormales_certificado" name="pg_plantulas_anormales_certificado" step="0.01" value="<?php echo htmlspecialchars($certForm['pg_plantulas_anormales_certificado'], ENT_QUOTES, 'UTF-8'); ?>">
+                                        <input type="number" step="0.01" min="0" class="form-control" id="pg_plantulas_anormales_certificado" name="pg_plantulas_anormales_certificado" value="<?php echo htmlspecialchars($certForm['pg_plantulas_anormales_certificado'], ENT_QUOTES, 'UTF-8'); ?>">
                                     </div>
 
                                     <div class="col-md-2">
                                         <label for="pg_semillas_muertas_certificado" class="form-label">Semillas muertas</label>
-                                        <input type="number" class="form-control" id="pg_semillas_muertas_certificado" name="pg_semillas_muertas_certificado" step="0.01" value="<?php echo htmlspecialchars($certForm['pg_semillas_muertas_certificado'], ENT_QUOTES, 'UTF-8'); ?>">
+                                        <input type="number" class="form-control" id="pg_semillas_muertas_certificado" name="pg_semillas_muertas_certificado" step="0.01" min="0" value="<?php echo htmlspecialchars($certForm['pg_semillas_muertas_certificado'], ENT_QUOTES, 'UTF-8'); ?>">
                                     </div>
 
                                     <div class="col-12">
                                         <label for="pg_contenido_humedad_certificado" class="form-label">Contenido humedad (%)</label>
-                                        <input type="number" step="1" class="form-control" id="pg_contenido_humedad_certificado" name="pg_contenido_humedad_certificado" step="0.01" value="<?php echo htmlspecialchars($certForm['pg_contenido_humedad_certificado'], ENT_QUOTES, 'UTF-8'); ?>">
+                                        <input type="number" step="0.01" min="0" class="form-control" id="pg_contenido_humedad_certificado" name="pg_contenido_humedad_certificado" value="<?php echo htmlspecialchars($certForm['pg_contenido_humedad_certificado'], ENT_QUOTES, 'UTF-8'); ?>">
                                     </div>
 
                                     <?php if ($page !== 'CertificadoINASE'): ?>
@@ -3324,32 +3354,32 @@ $loggedUser = $_SESSION['user']['name'] ?? 'Usuario';
 
                                         <div class="col-md-2">
                                             <label for="pgc_numero_dias_certificado" class="form-label">Días</label>
-                                            <input type="number" step="1" class="form-control" id="pgc_numero_dias_certificado" name="pgc_numero_dias_certificado" value="<?php echo htmlspecialchars($certForm['pgc_numero_dias_certificado'], ENT_QUOTES, 'UTF-8'); ?>">
+                                            <input type="number" step="1" min="0" class="form-control" id="pgc_numero_dias_certificado" name="pgc_numero_dias_certificado" value="<?php echo htmlspecialchars($certForm['pgc_numero_dias_certificado'], ENT_QUOTES, 'UTF-8'); ?>">
                                         </div>
 
                                         <div class="col-md-2">
                                             <label for="pgc_plantulas_normales_certificado" class="form-label">Plántulas normales</label>
-                                            <input type="number" step="1" class="form-control" id="pgc_plantulas_normales_certificado" name="pgc_plantulas_normales_certificado" step="0.01" value="<?php echo htmlspecialchars($certForm['pgc_plantulas_normales_certificado'], ENT_QUOTES, 'UTF-8'); ?>">
+                                            <input type="number" step="0.01" min="0" class="form-control" id="pgc_plantulas_normales_certificado" name="pgc_plantulas_normales_certificado" value="<?php echo htmlspecialchars($certForm['pgc_plantulas_normales_certificado'], ENT_QUOTES, 'UTF-8'); ?>">
                                         </div>
 
                                         <div class="col-md-2">
                                             <label for="pgc_semillas_duras_certificado" class="form-label">Semillas duras</label>
-                                            <input type="number" step="1" class="form-control" id="pgc_semillas_duras_certificado" name="pgc_semillas_duras_certificado" step="0.01" value="<?php echo htmlspecialchars($certForm['pgc_semillas_duras_certificado'], ENT_QUOTES, 'UTF-8'); ?>">
+                                            <input type="number" step="0.01" min="0" class="form-control" id="pgc_semillas_duras_certificado" name="pgc_semillas_duras_certificado" value="<?php echo htmlspecialchars($certForm['pgc_semillas_duras_certificado'], ENT_QUOTES, 'UTF-8'); ?>">
                                         </div>
 
                                         <div class="col-md-2">
                                             <label for="pgc_semillas_frescas_certificado" class="form-label">Semillas frescas</label>
-                                            <input type="number" step="1" class="form-control" id="pgc_semillas_frescas_certificado" name="pgc_semillas_frescas_certificado" step="0.01" value="<?php echo htmlspecialchars($certForm['pgc_semillas_frescas_certificado'], ENT_QUOTES, 'UTF-8'); ?>">
+                                            <input type="number" step="0.01" min="0" class="form-control" id="pgc_semillas_frescas_certificado" name="pgc_semillas_frescas_certificado" value="<?php echo htmlspecialchars($certForm['pgc_semillas_frescas_certificado'], ENT_QUOTES, 'UTF-8'); ?>">
                                         </div>
 
                                         <div class="col-md-2">
                                             <label for="pgc_plantulas_anormales_certificado" class="form-label">Plántulas anormales</label>
-                                            <input type="number" step="1" class="form-control" id="pgc_plantulas_anormales_certificado" name="pgc_plantulas_anormales_certificado" step="0.01" value="<?php echo htmlspecialchars($certForm['pgc_plantulas_anormales_certificado'], ENT_QUOTES, 'UTF-8'); ?>">
+                                            <input type="number" step="0.01" min="0" class="form-control" id="pgc_plantulas_anormales_certificado" name="pgc_plantulas_anormales_certificado" value="<?php echo htmlspecialchars($certForm['pgc_plantulas_anormales_certificado'], ENT_QUOTES, 'UTF-8'); ?>">
                                         </div>
 
                                         <div class="col-md-2">
                                             <label for="pgc_semillas_muertas_certificado" class="form-label">Semillas muertas</label>
-                                            <input type="number" step="1" class="form-control" id="pgc_semillas_muertas_certificado" name="pgc_semillas_muertas_certificado" step="0.01" value="<?php echo htmlspecialchars($certForm['pgc_semillas_muertas_certificado'], ENT_QUOTES, 'UTF-8'); ?>">
+                                            <input type="number" step="0.01" min="0" class="form-control" id="pgc_semillas_muertas_certificado" name="pgc_semillas_muertas_certificado" value="<?php echo htmlspecialchars($certForm['pgc_semillas_muertas_certificado'], ENT_QUOTES, 'UTF-8'); ?>">
                                         </div>
 
                                         <hr class="my-4">
@@ -3357,12 +3387,12 @@ $loggedUser = $_SESSION['user']['name'] ?? 'Usuario';
 
                                         <div class="col-md-6">
                                             <label for="vigor_nro_dias_certificado" class="form-label">Nro de días</label>
-                                            <input type="number" class="form-control" id="vigor_nro_dias_certificado" name="vigor_nro_dias_certificado" value="<?php echo htmlspecialchars($certForm['vigor_nro_dias_certificado'], ENT_QUOTES, 'UTF-8'); ?>">
+                                            <input type="number" class="form-control" id="vigor_nro_dias_certificado" name="vigor_nro_dias_certificado" min="0" value="<?php echo htmlspecialchars($certForm['vigor_nro_dias_certificado'], ENT_QUOTES, 'UTF-8'); ?>">
                                         </div>
 
                                         <div class="col-md-6">
                                             <label for="vigor_plantulas_normales_certificado" class="form-label">Plántulas normales</label>
-                                            <input type="number" step="1" class="form-control" id="vigor_plantulas_normales_certificado" name="vigor_plantulas_normales_certificado" step="0.01" value="<?php echo htmlspecialchars($certForm['vigor_plantulas_normales_certificado'], ENT_QUOTES, 'UTF-8'); ?>">
+                                            <input type="number" step="0.01" min="0" class="form-control" id="vigor_plantulas_normales_certificado" name="vigor_plantulas_normales_certificado" value="<?php echo htmlspecialchars($certForm['vigor_plantulas_normales_certificado'], ENT_QUOTES, 'UTF-8'); ?>">
                                         </div>
                                     <?php endif; ?>
 
