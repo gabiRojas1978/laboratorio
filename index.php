@@ -552,6 +552,19 @@ if (isset($_SESSION['new_certificado_id'])) {
     $newCertificadoId = $_SESSION['new_certificado_id'];
     unset($_SESSION['new_certificado_id']);
 }
+$newCertificadoClienteEmails = [];
+if ($newCertificadoId !== null && is_logged_in()) {
+    try {
+        $certClienteStatement = db()->prepare('SELECT id_cliente_certificado FROM certificados WHERE id_certificado = :id AND id_empresa = :id_empresa LIMIT 1');
+        $certClienteStatement->execute([':id' => $newCertificadoId, ':id_empresa' => current_empresa_id()]);
+        $certClienteId = $certClienteStatement->fetchColumn();
+        if ($certClienteId !== false && $certClienteId !== null) {
+            $newCertificadoClienteEmails = get_cliente_emails((int) $certClienteId);
+        }
+    } catch (Throwable $throwable) {
+        $newCertificadoClienteEmails = [];
+    }
+}
 $clientForm = [
     'nombre_cliente' => '',
     'telefono_cliente' => '',
@@ -1819,9 +1832,6 @@ if (is_logged_in() && isset($_GET['pdf'])) {
 
 if (is_logged_in() && $_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['enviar_certificado_email'])) {
     header('Content-Type: application/json; charset=utf-8');
-    // Envío de certificados por email deshabilitado temporalmente.
-    echo json_encode(['ok' => false, 'error' => 'El envío de certificados por email está deshabilitado por el momento.']);
-    exit;
 
     $certificadoId = filter_var($_POST['certificado_id'] ?? '', FILTER_VALIDATE_INT, ['options' => ['min_range' => 1]]);
     $destinatarios = normalize_client_emails($_POST['destinatarios'] ?? []);
@@ -3092,10 +3102,67 @@ $loggedUser = $_SESSION['user']['name'] ?? 'Usuario';
                                 <script>
                                     (function() {
                                         const certificadoId = <?php echo json_encode((string) $newCertificadoId); ?>;
+                                        const clienteEmails = <?php echo json_encode($newCertificadoClienteEmails, JSON_UNESCAPED_UNICODE); ?>;
+
                                         const downloadFrame = document.createElement('iframe');
                                         downloadFrame.style.display = 'none';
                                         downloadFrame.src = '/index.php?pdf=' + encodeURIComponent(certificadoId) + '&download=1';
                                         document.body.appendChild(downloadFrame);
+
+                                        document.addEventListener('DOMContentLoaded', function() {
+                                            if (clienteEmails.length === 0) {
+                                                return;
+                                            }
+
+                                            const listContainer = document.getElementById('certificadoEmailList');
+                                            const feedback = document.getElementById('certificadoEmailFeedback');
+                                            const sendBtn = document.getElementById('certificadoEmailSendBtn');
+                                            listContainer.innerHTML = clienteEmails.map(function(email, index) {
+                                                const optId = 'certEmailOpt' + index;
+                                                return '<div class="form-check"><input class="form-check-input" type="checkbox" value="' + email + '" id="' + optId + '" checked>' +
+                                                    '<label class="form-check-label" for="' + optId + '">' + email + '</label></div>';
+                                            }).join('');
+
+                                            const modal = new bootstrap.Modal(document.getElementById('certificadoEmailModal'));
+                                            modal.show();
+
+                                            sendBtn.addEventListener('click', function() {
+                                                const selected = Array.from(listContainer.querySelectorAll('input[type=checkbox]:checked')).map(function(el) {
+                                                    return el.value;
+                                                });
+                                                if (selected.length === 0) {
+                                                    feedback.innerHTML = '<div class="alert alert-warning py-2 mb-0">Selecciona al menos un email.</div>';
+                                                    return;
+                                                }
+
+                                                feedback.innerHTML = '<div class="text-muted">Enviando...</div>';
+                                                sendBtn.disabled = true;
+                                                const formData = new FormData();
+                                                formData.append('enviar_certificado_email', '1');
+                                                formData.append('certificado_id', certificadoId);
+                                                selected.forEach(function(email) {
+                                                    formData.append('destinatarios[]', email);
+                                                });
+
+                                                fetch('/index.php', {
+                                                        method: 'POST',
+                                                        body: formData
+                                                    })
+                                                    .then(function(response) {
+                                                        return response.json();
+                                                    })
+                                                    .then(function(data) {
+                                                        sendBtn.disabled = false;
+                                                        feedback.innerHTML = data.ok ?
+                                                            '<div class="alert alert-success py-2 mb-0">Certificado enviado correctamente.</div>' :
+                                                            '<div class="alert alert-danger py-2 mb-0">' + (data.error || 'No fue posible enviar el email.') + '</div>';
+                                                    })
+                                                    .catch(function() {
+                                                        sendBtn.disabled = false;
+                                                        feedback.innerHTML = '<div class="alert alert-danger py-2 mb-0">No fue posible enviar el email.</div>';
+                                                    });
+                                            });
+                                        });
                                     })();
                                 </script>
                             <?php endif; ?>
