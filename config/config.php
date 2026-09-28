@@ -2,9 +2,9 @@
 
 declare(strict_types=1);
 
-const APP_NAME = 'Laboratorio Leucaena';
+const APP_NAME = 'Laboratorio';
 const APP_BRAND = 'Laboratorio de Análisis de Semillas';
-const APP_SUBTITLE = 'LEUCAENA';
+const APP_SUBTITLE = 'Laboratorio';
 
 $databaseConfig = [
     'host' => getenv('DB_HOST') ?: 'localhost',

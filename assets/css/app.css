@@ -64,6 +64,10 @@ body {
     line-height: 1.1;
 }
 
+.sidebar-brand__title {
+    color: #f4f5ee;
+}
+
 .brand-subtitle,
 .sidebar-brand__subtitle {
     color: var(--brand-green-soft);
