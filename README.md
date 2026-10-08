@@ -13,6 +13,8 @@ Proyecto base en PHP 8 con Bootstrap para un laboratorio de semillas.
     - Otras Determinaciones
   - Certificados
     - Certificado general
+    - Certificado INASE
+    - Certificado de tetrazolio
 - Paleta verde y negro inspirada en el logo
 
 ## Usuario de prueba

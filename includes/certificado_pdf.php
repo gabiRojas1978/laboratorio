@@ -63,7 +63,9 @@ function build_certificado_pdf(int $certificadoId): ?array
     $amparaNo = $amparaTotalidadLote === 'N' ? 'X' : ' ';
     $detalleDeterminaciones = $otrasDet !== '' ? $otrasDet : 'N';
 
-    $esCertificadoInase = trim((string) ($certificadoPdf['tipo_certificado'] ?? '')) === 'certificadoinase';
+    $tipoCertificado = trim((string) ($certificadoPdf['tipo_certificado'] ?? ''));
+    $esCertificadoInase = $tipoCertificado === 'certificadoinase';
+    $esCertificadoTetrazolio = $tipoCertificado === 'certificadotetrazolio';
     $membreteImagePath = certificate_logo_path(current_empresa_id());
     $brandHeaderHtml = '';
 
@@ -223,6 +225,92 @@ function build_certificado_pdf(int $certificadoId): ?array
         
     </body>
     </html>';
+
+    if ($esCertificadoTetrazolio) {
+        $escape = static fn($value): string => htmlspecialchars((string) ($value ?? ''), ENT_QUOTES, 'UTF-8');
+        $percent = static fn($value): string => htmlspecialchars(format_percent_value($value), ENT_QUOTES, 'UTF-8');
+        $viabilidadTotal = (float) ($certificadoPdf['tetrazolio_viable_sin_defectos_certificado'] ?? 0)
+            + (float) ($certificadoPdf['tetrazolio_viable_defectos_leves_certificado'] ?? 0)
+            + (float) ($certificadoPdf['tetrazolio_viable_defectos_moderados_certificado'] ?? 0)
+            + (float) ($certificadoPdf['tetrazolio_viable_defectos_severos_certificado'] ?? 0);
+        $vigorTotal = (float) ($certificadoPdf['tetrazolio_vigor_alto_certificado'] ?? 0)
+            + (float) ($certificadoPdf['tetrazolio_vigor_medio_certificado'] ?? 0)
+            + (float) ($certificadoPdf['tetrazolio_vigor_bajo_certificado'] ?? 0);
+
+        $html = '<html><head><style>
+            body { font-family: serif; font-size: 11px; color: #222; }
+            .center { text-align: center; }
+            .bold { font-weight: 700; }
+            .brand { width: 100%; height: 25mm; margin: 0 auto 3px; text-align: center; }
+            .brand-image { width: 102mm; height: 25mm; max-width: 100%; object-fit: contain; }
+            .title { font-size: 29px; font-weight: 700; line-height: 1.05; letter-spacing: .5px; margin: 2px 0 5px; }
+            .subtitle { border-top: 1px solid #333; padding-top: 4px; font-family: sans-serif; font-size: 10px; }
+            .section-title { text-align: center; font-size: 17px; font-weight: 700; margin: 12px 0 5px; }
+            .applicant { width: 100%; border-collapse: collapse; margin-bottom: 7px; }
+            .applicant td { padding: 3px 1px; border-bottom: 1px solid #555; }
+            .applicant .label { width: 25%; font-family: sans-serif; font-weight: 700; border-bottom: 0; }
+            table.grid { width: 100%; border-collapse: collapse; margin-top: 5px; }
+            table.grid th, table.grid td { border: 1px solid #555; padding: 4px 5px; text-align: center; vertical-align: middle; }
+            table.grid th { background: #d8d8d8; font-weight: 700; }
+            table.grid .left { text-align: left; }
+            .lot-values td { height: 27px; }
+            .result-values td { height: 20px; }
+            .total { background: #e4e4e4; font-weight: 700; }
+            .critical { color: #b00020; font-size: 9px; }
+            .si-no { font-family: sans-serif; font-size: 12px; font-weight: 700; letter-spacing: .5px; margin-top: 10px; }
+        </style></head><body>' . $brandHeaderHtml . '
+            <div class="center title">CERTIFICADO DE ANÁLISIS<br>PRUEBA TOPOGRÁFICA POR TETRAZOLIO</div>
+            
+            <div class="section-title">INFORMACIÓN DEL SOLICITANTE</div>
+            <table class="applicant">
+                <tr><td class="label">Nombre del Solicitante:</td><td>' . $escape($cliente) . '</td></tr>
+                <tr><td class="label">Especie:</td><td>' . $escape($especie) . '</td></tr>
+                <tr><td class="label">Detalle:</td><td>' . $escape($certificadoPdf['tetrazolio_detalle_certificado'] ?? '') . '</td></tr>
+            </table>
+
+            <table class="grid">
+                <tr><th>PESO DEL LOTE</th><th>N° DE BOLSAS</th><th>FECHA DE MUESTREO</th><th>OTRAS REFERENCIAS</th></tr>
+                <tr class="lot-values">
+                    <td>' . $escape(format_text_value($certificadoPdf['peso_certificado'] ?? '', '----------------')) . '</td>
+                    <td>' . $escape(format_text_value($certificadoPdf['nro_envases_certificado'] ?? '', '----------------')) . '</td>
+                    <td>' . $escape(format_date_short((string) ($certificadoPdf['fecha_muestreo_certificado'] ?? ''))) . '</td>
+                    <td>' . $escape(format_text_value($certificadoPdf['otras_referencias_certificado'] ?? '', '----------------')) . '</td>
+                </tr>
+                <tr><th>N° DE PRECINTO</th><th>FECHA DE RECEPCIÓN<br>DE MUESTRAS</th><th>FECHA DE FINALIZACIÓN<br>DE LOS ENSAYOS</th><th>N° DE ANÁLISIS</th></tr>
+                <tr class="lot-values">
+                    <td>' . $escape(format_text_value($certificadoPdf['precinto_certificado'] ?? '', '----------------')) . '</td>
+                    <td>' . $escape(format_date_short((string) ($certificadoPdf['fecha_muestras_certificado'] ?? ''))) . '</td>
+                    <td>' . $escape(format_date_short((string) ($certificadoPdf['fecha_finalizacion_ensayos_certificado'] ?? ''))) . '</td>
+                    <td>' . $escape(format_text_value($certificadoPdf['nro_analisis_certificado'] ?? '', '----------------')) . '</td>
+                </tr>
+            </table>
+
+            <table class="grid result-values">
+                <tr><th style="width:35%">VIABILIDAD POR TETRAZOLIO</th><th style="width:15%">%</th><th style="width:35%">VIGOR POR TETRAZOLIO</th><th style="width:15%">%</th></tr>
+                <tr><td class="left">1. Viable sin Defectos</td><td>' . $percent($certificadoPdf['tetrazolio_viable_sin_defectos_certificado'] ?? null) . '</td><td class="left">A. Vigor Alto</td><td>' . $percent($certificadoPdf['tetrazolio_vigor_alto_certificado'] ?? null) . '</td></tr>
+                <tr><td class="left">2. Viable Defectos Leves</td><td>' . $percent($certificadoPdf['tetrazolio_viable_defectos_leves_certificado'] ?? null) . '</td><td class="left">B. Vigor Medio</td><td>' . $percent($certificadoPdf['tetrazolio_vigor_medio_certificado'] ?? null) . '</td></tr>
+                <tr><td class="left">3. Viable Defectos Moderados</td><td>' . $percent($certificadoPdf['tetrazolio_viable_defectos_moderados_certificado'] ?? null) . '</td><td class="left">C. Vigor Bajo</td><td>' . $percent($certificadoPdf['tetrazolio_vigor_bajo_certificado'] ?? null) . '</td></tr>
+                <tr><td class="left">4. Viable Defectos Severos<br><span class="critical">Límite Crítico</span></td><td>' . $percent($certificadoPdf['tetrazolio_viable_defectos_severos_certificado'] ?? null) . '</td><td class="bold">VIGOR</td><td class="total">' . $percent($vigorTotal) . '</td></tr>
+                <tr><td class="left">5. No Viables</td><td>' . $percent($certificadoPdf['tetrazolio_no_viables_certificado'] ?? null) . '</td><td colspan="2" style="border:0"></td></tr>
+                <tr><td class="left bold">% VIABILIDAD</td><td class="total">' . $percent($viabilidadTotal) . '</td><td colspan="2" style="border:0"></td></tr>
+            </table>
+
+            <table class="grid result-values">
+                <tr><th colspan="5">% DAÑOS ACUMULADOS</th><th rowspan="2">DURAS</th></tr>
+                <tr><th>MECÁNICOS</th><th>AMBIENTES</th><th>CHINCHES</th><th>FRACTURAS</th><th>OTROS</th></tr>
+                <tr>
+                    <td>' . $percent($certificadoPdf['tetrazolio_danos_mecanicos_certificado'] ?? null) . '</td>
+                    <td>' . $percent($certificadoPdf['tetrazolio_danos_ambientes_certificado'] ?? null) . '</td>
+                    <td>' . $percent($certificadoPdf['tetrazolio_danos_chinches_certificado'] ?? null) . '</td>
+                    <td>' . $percent($certificadoPdf['tetrazolio_danos_fracturas_certificado'] ?? null) . '</td>
+                    <td>' . $percent($certificadoPdf['tetrazolio_danos_otros_certificado'] ?? null) . '</td>
+                    <td>' . $percent($certificadoPdf['tetrazolio_duras_certificado'] ?? null) . '</td>
+                </tr>
+            </table>
+
+            <div class="si-no">ESTE CERTIFICADO &nbsp;&nbsp; SI [' . $amparaSi . '] &nbsp;&nbsp; NO [' . $amparaNo . '] &nbsp;&nbsp; AMPARA LA TOTALIDAD DEL LOTE</div>
+        </body></html>';
+    }
 
     //------------------------------------------------
     $footerHtml = '

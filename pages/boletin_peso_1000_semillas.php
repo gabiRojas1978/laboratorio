@@ -13,7 +13,7 @@ try {
 
 $especiesOptions = [];
 try {
-    $especiesOptionsStatement = db()->prepare('SELECT id_especie, nombre_especie FROM especies WHERE id_empresa = :id_empresa ORDER BY nombre_especie ASC');
+    $especiesOptionsStatement = db()->prepare('SELECT id_especie, nombre_especie, cientifico_especie FROM especies WHERE id_empresa = :id_empresa ORDER BY nombre_especie ASC');
     $especiesOptionsStatement->execute([':id_empresa' => current_empresa_id()]);
     $especiesOptions = $especiesOptionsStatement->fetchAll();
 } catch (Throwable $throwable) {
@@ -33,7 +33,7 @@ try {
     }
 
     $boletinesStatement = db()->prepare(
-        'SELECT b.id_boletin_peso, b.muestra_nro, b.fecha_boletin, b.analista, b.promedio_peso, b.desvio_estandar, b.coeficiente_variacion, b.resultado_peso_mil, e.nombre_especie, cl.nombre_cliente
+        'SELECT b.id_boletin_peso, b.muestra_nro, b.fecha_boletin, b.analista, b.promedio_peso, b.desvio_estandar, b.coeficiente_variacion, b.resultado_peso_mil, e.nombre_especie, e.cientifico_especie, cl.nombre_cliente
          FROM boletines_peso_1000_semillas b
          LEFT JOIN especies e ON e.id_especie = b.id_especie
          LEFT JOIN clientes cl ON cl.id_cliente = b.id_cliente
@@ -79,15 +79,20 @@ try {
         </div>
 
         <div class="col-md-4">
-            <label for="id_especie" class="form-label">Especie</label>
-            <select class="form-select" id="id_especie" name="id_especie">
+            <label for="id_especie" class="form-label">Especie remitente *</label>
+            <select class="form-select" id="id_especie" name="id_especie" data-scientific-target="peso_especie_latin" required>
                 <option value="">Selecciona una especie</option>
                 <?php foreach ($especiesOptions as $especie): ?>
-                    <option value="<?php echo htmlspecialchars((string) $especie['id_especie'], ENT_QUOTES, 'UTF-8'); ?>" <?php echo $boletinPesoForm['id_especie'] === (string) $especie['id_especie'] ? 'selected' : ''; ?>>
+                    <option value="<?php echo htmlspecialchars((string) $especie['id_especie'], ENT_QUOTES, 'UTF-8'); ?>" data-scientific="<?php echo htmlspecialchars((string) ($especie['cientifico_especie'] ?? ''), ENT_QUOTES, 'UTF-8'); ?>" <?php echo $boletinPesoForm['id_especie'] === (string) $especie['id_especie'] ? 'selected' : ''; ?>>
                         <?php echo htmlspecialchars((string) $especie['nombre_especie'], ENT_QUOTES, 'UTF-8'); ?>
                     </option>
                 <?php endforeach; ?>
             </select>
+        </div>
+
+        <div class="col-md-4">
+            <label for="peso_especie_latin" class="form-label">Especie (Latín)</label>
+            <input class="form-control" id="peso_especie_latin" readonly aria-readonly="true" placeholder="Se completa al seleccionar la especie">
         </div>
 
         <div class="col-md-4">
@@ -158,19 +163,21 @@ try {
                     <th>ID</th>
                     <th>Muestra</th>
                     <th>Cliente</th>
-                    <th>Especie</th>
+                    <th>Especie remitente</th>
+                    <th>Especie (Latín)</th>
                     <th>Fecha</th>
                     <th>Analista</th>
                     <th>Promedio</th>
                     <th>Desvío estándar</th>
                     <th>Coef. Variación (%)</th>
                     <th>Resultado (peso/1000)</th>
+                    <th>PDF</th>
                 </tr>
             </thead>
             <tbody>
                 <?php if ($boletinesPeso === []): ?>
                     <tr>
-                        <td colspan="10" class="text-center text-muted">No hay boletines cargados aún.</td>
+                        <td colspan="12" class="text-center text-muted">No hay boletines cargados aún.</td>
                     </tr>
                 <?php else: ?>
                     <?php foreach ($boletinesPeso as $boletin): ?>
@@ -179,12 +186,18 @@ try {
                             <td><?php echo htmlspecialchars((string) $boletin['muestra_nro'], ENT_QUOTES, 'UTF-8'); ?></td>
                             <td><?php echo htmlspecialchars((string) ($boletin['nombre_cliente'] ?? ''), ENT_QUOTES, 'UTF-8'); ?></td>
                             <td><?php echo htmlspecialchars((string) ($boletin['nombre_especie'] ?? ''), ENT_QUOTES, 'UTF-8'); ?></td>
+                            <td><?php echo htmlspecialchars((string) ($boletin['cientifico_especie'] ?? ''), ENT_QUOTES, 'UTF-8'); ?></td>
                             <td><?php echo htmlspecialchars(format_date_short($boletin['fecha_boletin'] ?? null), ENT_QUOTES, 'UTF-8'); ?></td>
                             <td><?php echo htmlspecialchars((string) ($boletin['analista'] ?? ''), ENT_QUOTES, 'UTF-8'); ?></td>
                             <td><?php echo htmlspecialchars($boletin['promedio_peso'] !== null ? number_format((float) $boletin['promedio_peso'], 4) : '', ENT_QUOTES, 'UTF-8'); ?></td>
                             <td><?php echo htmlspecialchars($boletin['desvio_estandar'] !== null ? number_format((float) $boletin['desvio_estandar'], 4) : '', ENT_QUOTES, 'UTF-8'); ?></td>
                             <td><?php echo htmlspecialchars($boletin['coeficiente_variacion'] !== null ? number_format((float) $boletin['coeficiente_variacion'], 2) : '', ENT_QUOTES, 'UTF-8'); ?></td>
                             <td><?php echo htmlspecialchars($boletin['resultado_peso_mil'] !== null ? number_format((float) $boletin['resultado_peso_mil'], 4) : '', ENT_QUOTES, 'UTF-8'); ?></td>
+                            <td>
+                                <a class="btn btn-sm btn-outline-light" href="/index.php?boletin_peso_pdf=<?php echo urlencode((string) $boletin['id_boletin_peso']); ?>" target="_blank" rel="noopener noreferrer" aria-label="Abrir PDF del boletín <?php echo htmlspecialchars((string) $boletin['muestra_nro'], ENT_QUOTES, 'UTF-8'); ?>">
+                                    <i class="bi bi-file-earmark-pdf"></i> PDF
+                                </a>
+                            </td>
                         </tr>
                     <?php endforeach; ?>
                 <?php endif; ?>

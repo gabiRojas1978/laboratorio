@@ -9,6 +9,14 @@ require __DIR__ . '/includes/smtp_settings.php';
 require __DIR__ . '/includes/certificado_pdf.php';
 require __DIR__ . '/includes/navigation.php';
 require __DIR__ . '/includes/boletin_peso_1000_semillas.php';
+require __DIR__ . '/includes/boletin_peso_1000_semillas_pdf.php';
+require __DIR__ . '/includes/boletin_tetrazolio.php';
+require __DIR__ . '/includes/boletin_tetrazolio_pdf.php';
+require __DIR__ . '/includes/boletin_pureza.php';
+require __DIR__ . '/includes/boletin_pureza_pdf.php';
+require __DIR__ . '/includes/boletin_malezas_pdf.php';
+require __DIR__ . '/includes/boletin_germinacion.php';
+require __DIR__ . '/includes/boletin_germinacion_pdf.php';
 
 $errors = [];
 $successMessage = null;
@@ -106,6 +114,21 @@ $certForm = [
     'otras_referencias_certificado' => '',
     'clase_materia_inerte_certificado' => '',
     'otras_semillas_certificado' => '',
+    'tetrazolio_detalle_certificado' => '',
+    'tetrazolio_viable_sin_defectos_certificado' => '',
+    'tetrazolio_viable_defectos_leves_certificado' => '',
+    'tetrazolio_viable_defectos_moderados_certificado' => '',
+    'tetrazolio_viable_defectos_severos_certificado' => '',
+    'tetrazolio_no_viables_certificado' => '',
+    'tetrazolio_vigor_alto_certificado' => '',
+    'tetrazolio_vigor_medio_certificado' => '',
+    'tetrazolio_vigor_bajo_certificado' => '',
+    'tetrazolio_danos_mecanicos_certificado' => '',
+    'tetrazolio_danos_ambientes_certificado' => '',
+    'tetrazolio_danos_chinches_certificado' => '',
+    'tetrazolio_danos_fracturas_certificado' => '',
+    'tetrazolio_danos_otros_certificado' => '',
+    'tetrazolio_duras_certificado' => '',
 ];
 $certEditId = null;
 $certFilter = [
@@ -136,6 +159,86 @@ $boletinPesoForm = [
     'observaciones' => '',
     'pesos' => array_fill(0, 8, ''),
 ];
+$boletinTetrazolioForm = [
+    'id_cliente' => '',
+    'id_especie' => '',
+    'muestra_nro' => '',
+    'fecha_inicio' => '',
+    'fecha_finalizacion' => '',
+    'analista' => '',
+    'tiempo_humedecimiento' => '',
+    'tiempo_tincion' => '',
+    'temperatura_tincion' => '',
+    'concentracion_tz' => '',
+    'observaciones' => '',
+    'repeticiones' => [
+        1 => ['viables' => '', 'no_viables' => ''],
+        2 => ['viables' => '', 'no_viables' => ''],
+        3 => ['viables' => '', 'no_viables' => ''],
+        4 => ['viables' => '', 'no_viables' => ''],
+    ],
+];
+$boletinPurezaForm = [
+    'id_cliente' => '',
+    'id_especie' => '',
+    'analisis_nro' => '',
+    'fecha_analisis' => '',
+    'analista' => '',
+    'peso_inicial' => '',
+    'peso_semilla_pura' => '',
+    'observaciones' => '',
+    'id_otras_determinaciones' => [],
+    'otras_determinaciones_texto' => '',
+    'componentes_materia_inerte' => [['nombre' => '', 'peso' => '']],
+    'componentes_otras_semillas' => [['nombre' => '', 'peso' => '']],
+];
+$boletinMalezasForm = [
+    'id_cliente' => '',
+    'id_especie' => '',
+    'analisis_nro' => '',
+    'muestra_nro' => '',
+    'especie_remitente' => '',
+    'especie_latin' => '',
+    'lote' => '',
+    'tipo_analisis' => 'completo',
+    'peso_analisis' => '',
+    'fecha_analisis' => '',
+    'analista' => '',
+    'id_otras_determinaciones' => [],
+    'otras_determinaciones_texto' => '',
+    'observaciones' => '',
+    'especies_halladas' => [['especie_latin' => '', 'numero_semillas' => '']],
+];
+$boletinGerminacionForm = [
+    'id_cliente' => '',
+    'id_especie' => '',
+    'analisis_nro' => '',
+    'muestra_nro' => '',
+    'fecha_siembra' => '',
+    'fecha_primer_conteo' => '',
+    'fecha_segundo_conteo' => '',
+    'analista' => '',
+    'pretratamiento_desde' => '',
+    'pretratamiento_hasta' => '',
+    'pretratamiento_total_dias' => '',
+    'pretratamiento_aplica' => '',
+    'pretratamiento_frio' => false,
+    'pretratamiento_nitrato_k' => false,
+    'pretratamiento_presecado' => false,
+    'pretratamiento_prelavado' => false,
+    'sustrato_tipo' => '',
+    'sustrato_otro' => '',
+    'temperatura_camara_tipo' => '',
+    'temperatura_camara_otra' => '',
+    'observaciones' => '',
+    'repeticiones' => [
+        1 => ['semillas_sembradas' => '', 'primer_conteo_normales' => '', 'primer_conteo_anormales' => '', 'primer_conteo_duras' => '', 'primer_conteo_frescas' => '', 'primer_conteo_muertas' => '', 'segundo_conteo_normales' => '', 'segundo_conteo_anormales' => '', 'segundo_conteo_duras' => '', 'segundo_conteo_frescas' => '', 'segundo_conteo_muertas' => ''],
+        2 => ['semillas_sembradas' => '', 'primer_conteo_normales' => '', 'primer_conteo_anormales' => '', 'primer_conteo_duras' => '', 'primer_conteo_frescas' => '', 'primer_conteo_muertas' => '', 'segundo_conteo_normales' => '', 'segundo_conteo_anormales' => '', 'segundo_conteo_duras' => '', 'segundo_conteo_frescas' => '', 'segundo_conteo_muertas' => ''],
+        3 => ['semillas_sembradas' => '', 'primer_conteo_normales' => '', 'primer_conteo_anormales' => '', 'primer_conteo_duras' => '', 'primer_conteo_frescas' => '', 'primer_conteo_muertas' => '', 'segundo_conteo_normales' => '', 'segundo_conteo_anormales' => '', 'segundo_conteo_duras' => '', 'segundo_conteo_frescas' => '', 'segundo_conteo_muertas' => ''],
+        4 => ['semillas_sembradas' => '', 'primer_conteo_normales' => '', 'primer_conteo_anormales' => '', 'primer_conteo_duras' => '', 'primer_conteo_frescas' => '', 'primer_conteo_muertas' => '', 'segundo_conteo_normales' => '', 'segundo_conteo_anormales' => '', 'segundo_conteo_duras' => '', 'segundo_conteo_frescas' => '', 'segundo_conteo_muertas' => ''],
+    ],
+];
+$boletinGerminacionEditId = null;
 
 require __DIR__ . '/handlers/auth.php';
 require __DIR__ . '/handlers/configuracion.php';
@@ -154,6 +257,10 @@ require __DIR__ . '/handlers/usuarios.php';
 
 require __DIR__ . '/handlers/certificados.php';
 require __DIR__ . '/handlers/boletin_peso_1000_semillas.php';
+require __DIR__ . '/handlers/boletin_tetrazolio.php';
+require __DIR__ . '/handlers/boletin_pureza.php';
+require __DIR__ . '/handlers/boletin_malezas.php';
+require __DIR__ . '/handlers/boletin_germinacion.php';
 
 if (!is_logged_in()) {
     $isLoginPage = true;
@@ -354,6 +461,22 @@ if (($laboratorySettings['nombre_laboratorio'] ?? '') === '') {
 
         // Filter on page load
         document.addEventListener('DOMContentLoaded', filterCultivares);
+
+        function syncScientificName(speciesSelect) {
+            const scientificField = document.getElementById(speciesSelect.dataset.scientificTarget);
+            if (!scientificField) return;
+
+            scientificField.value = speciesSelect.selectedOptions[0]?.dataset.scientific || '';
+        }
+
+        document.addEventListener('DOMContentLoaded', function() {
+            document.querySelectorAll('[data-scientific-target]').forEach(syncScientificName);
+        });
+        document.addEventListener('change', function(event) {
+            if (event.target.matches('[data-scientific-target]')) {
+                syncScientificName(event.target);
+            }
+        });
 
         function initClienteEmails() {
             const emailList = document.getElementById('cliente-emails-list');

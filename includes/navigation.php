@@ -20,7 +20,7 @@ $navigation = [
             'boletin_peso_1000_semillas' => 'Peso de 1000 semillas',
             'boletin_tetrazolio' => 'Tetrazolio',
             'boletin_pureza' => 'Pureza física-botánica',
-            'boletin_malezas' => 'Análisis de malezas (DOSN)',
+            'boletin_malezas' => 'Otras especies en número',
             'boletin_germinacion' => 'Germinación',
         ],
     ],
@@ -29,6 +29,7 @@ $navigation = [
         'items' => [
             'Certificadogeneral' => 'Certificado general',
             'CertificadoINASE' => 'Certificado INASE',
+            'CertificadoTetrazolio' => 'Certificado de tetrazolio',
         ],
     ],
 ];
@@ -53,10 +54,11 @@ $pageMap = [
     'boletin_peso_1000_semillas' => ['title' => 'Boletín: Peso de 1000 semillas', 'subtitle' => 'Cálculo de varianza, desvío y coeficiente de variación'],
     'boletin_tetrazolio' => ['title' => 'Boletín de Tetrazolio', 'subtitle' => 'Viabilidad de semillas'],
     'boletin_pureza' => ['title' => 'Boletín de Pureza física-botánica', 'subtitle' => 'Semilla pura, materia inerte y otras semillas'],
-    'boletin_malezas' => ['title' => 'Boletín de Análisis de malezas (DOSN)', 'subtitle' => 'Determinación de otras semillas por número'],
+    'boletin_malezas' => ['title' => 'Otras especies en número', 'subtitle' => 'Registro y número de semillas'],
     'boletin_germinacion' => ['title' => 'Boletín de Germinación', 'subtitle' => 'Conteos, tolerancia y resultado final'],
     'Certificadogeneral' => ['title' => 'Certificado general', 'subtitle' => 'Emisión de certificados'],
     'CertificadoINASE' => ['title' => 'Certificado INASE', 'subtitle' => 'Emisión de certificados INASE'],
+    'CertificadoTetrazolio' => ['title' => 'Certificado de tetrazolio', 'subtitle' => 'Prueba topográfica por tetrazolio'],
     'empresas' => ['title' => 'Empresas', 'subtitle' => 'Alta y administración de laboratorios (tenants)'],
 ];
 
@@ -77,4 +79,5 @@ $pageTemplates = [
     'boletin_germinacion' => 'boletin_germinacion.php',
     'Certificadogeneral' => 'certificado_form.php',
     'CertificadoINASE' => 'certificado_form.php',
+    'CertificadoTetrazolio' => 'certificado_form.php',
 ];

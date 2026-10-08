@@ -104,6 +104,21 @@ body {
     box-shadow: 0 0 0 0.2rem rgba(79, 95, 47, 0.25);
 }
 
+.form-check-input {
+    background-color: #fff;
+    border: 2px solid var(--brand-green);
+}
+
+.form-check-input:checked {
+    background-color: var(--brand-green);
+    border-color: var(--brand-green);
+}
+
+.form-check-input:focus {
+    border-color: var(--brand-green);
+    box-shadow: 0 0 0 0.2rem rgba(79, 95, 47, 0.25);
+}
+
 .form-control::placeholder {
     color: #8a9478;
 }

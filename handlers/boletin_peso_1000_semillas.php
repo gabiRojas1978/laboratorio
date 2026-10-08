@@ -2,6 +2,30 @@
 
 declare(strict_types=1);
 
+if (is_logged_in() && isset($_GET['boletin_peso_pdf'])) {
+    $boletinId = filter_var($_GET['boletin_peso_pdf'], FILTER_VALIDATE_INT, ['options' => ['min_range' => 1]]);
+
+    if ($boletinId === false) {
+        http_response_code(400);
+        exit('ID de boletín inválido.');
+    }
+
+    $pdfResult = build_boletin_peso_1000_pdf($boletinId);
+    if ($pdfResult === null) {
+        http_response_code(404);
+        exit('Boletín no encontrado.');
+    }
+
+    $disposition = isset($_GET['download']) ? 'attachment' : 'inline';
+    header('Content-Type: application/pdf');
+    header('Content-Disposition: ' . $disposition . '; filename="' . $pdfResult['filename'] . '"');
+    header('Content-Length: ' . strlen($pdfResult['content']));
+    header('Cache-Control: no-store, no-cache, must-revalidate, max-age=0');
+    header('Pragma: no-cache');
+    echo $pdfResult['content'];
+    exit;
+}
+
 if (is_logged_in() && $_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['save_boletin_peso'])) {
     $boletinPesoForm['id_cliente'] = trim((string) ($_POST['id_cliente'] ?? ''));
     $boletinPesoForm['id_especie'] = trim((string) ($_POST['id_especie'] ?? ''));
@@ -24,9 +48,7 @@ if (is_logged_in() && $_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['sav
         $pesos[] = (float) $pesoRaw;
     }
 
-    $especieId = $boletinPesoForm['id_especie'] !== ''
-        ? filter_var($boletinPesoForm['id_especie'], FILTER_VALIDATE_INT, ['options' => ['min_range' => 1]])
-        : null;
+    $especieId = filter_var($boletinPesoForm['id_especie'], FILTER_VALIDATE_INT, ['options' => ['min_range' => 1]]);
     $clienteId = filter_var($boletinPesoForm['id_cliente'], FILTER_VALIDATE_INT, ['options' => ['min_range' => 1]]);
 
     if ($boletinPesoForm['muestra_nro'] === '') {
@@ -43,8 +65,17 @@ if (is_logged_in() && $_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['sav
         }
     }
 
-    if ($boletinPesoForm['id_especie'] !== '' && $especieId === false) {
+    if ($especieId === false) {
         $errors[] = 'Debes seleccionar una especie válida.';
+    } else {
+        $especieOwnStatement = db()->prepare('SELECT cientifico_especie FROM especies WHERE id_especie = :id AND id_empresa = :id_empresa LIMIT 1');
+        $especieOwnStatement->execute([':id' => $especieId, ':id_empresa' => current_empresa_id()]);
+        $especieRow = $especieOwnStatement->fetch();
+        if ($especieRow === false) {
+            $errors[] = 'La especie seleccionada no existe.';
+        } elseif (trim((string) ($especieRow['cientifico_especie'] ?? '')) === '') {
+            $errors[] = 'La especie seleccionada no tiene nombre científico en el catálogo.';
+        }
     }
 
     if (count($pesos) < 2) {
@@ -68,7 +99,7 @@ if (is_logged_in() && $_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['sav
                 ':id_empresa' => current_empresa_id(),
                 ':id_usuario' => $_SESSION['user']['id'] ?? null,
                 ':id_cliente' => $clienteId,
-                ':id_especie' => $especieId !== false ? $especieId : null,
+                ':id_especie' => $especieId,
                 ':muestra_nro' => $boletinPesoForm['muestra_nro'],
                 ':fecha_boletin' => $boletinPesoForm['fecha_boletin'] !== '' ? $boletinPesoForm['fecha_boletin'] : null,
                 ':analista' => $boletinPesoForm['analista'] !== '' ? $boletinPesoForm['analista'] : null,

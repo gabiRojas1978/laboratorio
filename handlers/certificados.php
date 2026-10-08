@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 if (is_logged_in() && $_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['save_certificado'])) {
     $tipoCertificadoPost = trim((string) ($_POST['tipo_certificado'] ?? ''));
-    $certForm['tipo_certificado'] = in_array($tipoCertificadoPost, ['certificadogeneral', 'certificadoinase'], true)
+    $certForm['tipo_certificado'] = in_array($tipoCertificadoPost, ['certificadogeneral', 'certificadoinase', 'certificadotetrazolio'], true)
         ? $tipoCertificadoPost
         : 'certificadogeneral';
     $certForm['id_cliente_certificado'] = trim((string) ($_POST['id_cliente_certificado'] ?? ''));
@@ -47,6 +47,26 @@ if (is_logged_in() && $_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['sav
     $certForm['otras_referencias_certificado'] = trim((string) ($_POST['otras_referencias_certificado'] ?? ''));
     $certForm['clase_materia_inerte_certificado'] = trim((string) ($_POST['clase_materia_inerte_certificado'] ?? ''));
     $certForm['otras_semillas_certificado'] = trim((string) ($_POST['otras_semillas_certificado'] ?? ''));
+    $certForm['tetrazolio_detalle_certificado'] = trim((string) ($_POST['tetrazolio_detalle_certificado'] ?? ''));
+    $tetrazolioNumericFields = [
+        'tetrazolio_viable_sin_defectos_certificado',
+        'tetrazolio_viable_defectos_leves_certificado',
+        'tetrazolio_viable_defectos_moderados_certificado',
+        'tetrazolio_viable_defectos_severos_certificado',
+        'tetrazolio_no_viables_certificado',
+        'tetrazolio_vigor_alto_certificado',
+        'tetrazolio_vigor_medio_certificado',
+        'tetrazolio_vigor_bajo_certificado',
+        'tetrazolio_danos_mecanicos_certificado',
+        'tetrazolio_danos_ambientes_certificado',
+        'tetrazolio_danos_chinches_certificado',
+        'tetrazolio_danos_fracturas_certificado',
+        'tetrazolio_danos_otros_certificado',
+        'tetrazolio_duras_certificado',
+    ];
+    foreach ($tetrazolioNumericFields as $tetrazolioNumericField) {
+        $certForm[$tetrazolioNumericField] = trim((string) ($_POST[$tetrazolioNumericField] ?? ''));
+    }
 
     if ($certForm['ampara_totalidad_lote_certificado'] !== '' && !in_array($certForm['ampara_totalidad_lote_certificado'], ['S', 'N'], true)) {
         $errors[] = 'La opción de ampara totalidad del lote no es válida.';
@@ -74,6 +94,7 @@ if (is_logged_in() && $_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['sav
         'pgc_semillas_muertas_certificado',
         'vigor_nro_dias_certificado',
         'vigor_plantulas_normales_certificado',
+        ...$tetrazolioNumericFields,
     ];
     foreach ($nonNegativeFields as $nonNegativeField) {
         if ($certForm[$nonNegativeField] !== '' && (float) $certForm[$nonNegativeField] < 0) {
@@ -127,6 +148,41 @@ if (is_logged_in() && $_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['sav
 
     if ($certForm['fecha_finalizacion_ensayos_certificado'] === '') {
         $errors[] = 'La fecha de finalización de ensayos es obligatoria.';
+    }
+
+    if ($certForm['tipo_certificado'] === 'certificadotetrazolio') {
+        $viabilidadFields = [
+            'tetrazolio_viable_sin_defectos_certificado',
+            'tetrazolio_viable_defectos_leves_certificado',
+            'tetrazolio_viable_defectos_moderados_certificado',
+            'tetrazolio_viable_defectos_severos_certificado',
+            'tetrazolio_no_viables_certificado',
+        ];
+        $viabilidadSum = 0.0;
+
+        foreach ($tetrazolioNumericFields as $tetrazolioNumericField) {
+            $value = $certForm[$tetrazolioNumericField];
+            if ($value === '') {
+                if (in_array($tetrazolioNumericField, $viabilidadFields, true)) {
+                    $errors[] = 'Debes completar todos los porcentajes de viabilidad por tetrazolio.';
+                    break;
+                }
+                continue;
+            }
+            if (!is_numeric($value) || (float) $value < 0 || (float) $value > 100) {
+                $errors[] = 'Los porcentajes de tetrazolio deben ser valores entre 0 y 100.';
+                break;
+            }
+        }
+
+        foreach ($viabilidadFields as $viabilidadField) {
+            if (is_numeric($certForm[$viabilidadField])) {
+                $viabilidadSum += (float) $certForm[$viabilidadField];
+            }
+        }
+        if (abs($viabilidadSum - 100.0) > 0.01) {
+            $errors[] = 'La columna de viabilidad por tetrazolio debe sumar 100 (actual: ' . format_percent_value($viabilidadSum) . ').';
+        }
     }
 
     // Validar porcentajes de Pureza - DEBEN sumar 100 o 0
@@ -190,7 +246,7 @@ if (is_logged_in() && $_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['sav
     if (!$errors) {
         try {
             $statement = db()->prepare(
-                'INSERT INTO certificados (tipo_certificado, id_empresa, id_usuario_certificado, id_cliente_certificado, id_especie_certificado, id_cultivar_certificado, marca_lote_certificado, peso_certificado, nro_envases_certificado, fecha_muestreo_certificado, otras_referencias_certificado, precinto_certificado, fecha_muestras_certificado, fecha_finalizacion_ensayos_certificado, nro_analisis_certificado, pureza_semilla_pura_certificado, materia_inerte_certificado, pureza_otras_semillas_certificado, pg_numero_dias_certificado, pg_plantulas_normales_certificado, pg_semillas_duras_certificado, pg_semillas_frescas_certificado, pg_plantulas_anormales_certificado, pg_semillas_muertas_certificado, pg_contenido_humedad_certificado, pgc_numero_dias_certificado, pgc_plantulas_normales_certificado, pgc_semillas_duras_certificado, pgc_semillas_frescas_certificado, pgc_plantulas_anormales_certificado, pgc_semillas_muertas_certificado, vigor_nro_dias_certificado, vigor_plantulas_normales_certificado, ampara_totalidad_lote_certificado, localidad_pais_certificado, fecha_emision_certificado, clase_materia_inerte_certificado, otras_semillas_certificado, otras_determinaciones_texto_certificado) VALUES (:tipo_certificado, :id_empresa, :id_usuario_certificado, :id_cliente_certificado, :id_especie_certificado, :id_cultivar_certificado, :marca_lote_certificado, :peso_certificado, :nro_envases_certificado, :fecha_muestreo_certificado, :otras_referencias_certificado, :precinto_certificado, :fecha_muestras_certificado, :fecha_finalizacion_ensayos_certificado, :nro_analisis_certificado, :pureza_semilla_pura_certificado, :materia_inerte_certificado, :pureza_otras_semillas_certificado, :pg_numero_dias_certificado, :pg_plantulas_normales_certificado, :pg_semillas_duras_certificado, :pg_semillas_frescas_certificado, :pg_plantulas_anormales_certificado, :pg_semillas_muertas_certificado, :pg_contenido_humedad_certificado, :pgc_numero_dias_certificado, :pgc_plantulas_normales_certificado, :pgc_semillas_duras_certificado, :pgc_semillas_frescas_certificado, :pgc_plantulas_anormales_certificado, :pgc_semillas_muertas_certificado, :vigor_nro_dias_certificado, :vigor_plantulas_normales_certificado, :ampara_totalidad_lote_certificado, :localidad_pais_certificado, :fecha_emision_certificado, :clase_materia_inerte_certificado, :otras_semillas_certificado, :otras_determinaciones_texto_certificado)'
+                'INSERT INTO certificados (tipo_certificado, id_empresa, id_usuario_certificado, id_cliente_certificado, id_especie_certificado, id_cultivar_certificado, marca_lote_certificado, peso_certificado, nro_envases_certificado, fecha_muestreo_certificado, otras_referencias_certificado, precinto_certificado, fecha_muestras_certificado, fecha_finalizacion_ensayos_certificado, nro_analisis_certificado, pureza_semilla_pura_certificado, materia_inerte_certificado, pureza_otras_semillas_certificado, pg_numero_dias_certificado, pg_plantulas_normales_certificado, pg_semillas_duras_certificado, pg_semillas_frescas_certificado, pg_plantulas_anormales_certificado, pg_semillas_muertas_certificado, pg_contenido_humedad_certificado, pgc_numero_dias_certificado, pgc_plantulas_normales_certificado, pgc_semillas_duras_certificado, pgc_semillas_frescas_certificado, pgc_plantulas_anormales_certificado, pgc_semillas_muertas_certificado, vigor_nro_dias_certificado, vigor_plantulas_normales_certificado, ampara_totalidad_lote_certificado, localidad_pais_certificado, fecha_emision_certificado, clase_materia_inerte_certificado, otras_semillas_certificado, otras_determinaciones_texto_certificado, tetrazolio_detalle_certificado, tetrazolio_viable_sin_defectos_certificado, tetrazolio_viable_defectos_leves_certificado, tetrazolio_viable_defectos_moderados_certificado, tetrazolio_viable_defectos_severos_certificado, tetrazolio_no_viables_certificado, tetrazolio_vigor_alto_certificado, tetrazolio_vigor_medio_certificado, tetrazolio_vigor_bajo_certificado, tetrazolio_danos_mecanicos_certificado, tetrazolio_danos_ambientes_certificado, tetrazolio_danos_chinches_certificado, tetrazolio_danos_fracturas_certificado, tetrazolio_danos_otros_certificado, tetrazolio_duras_certificado) VALUES (:tipo_certificado, :id_empresa, :id_usuario_certificado, :id_cliente_certificado, :id_especie_certificado, :id_cultivar_certificado, :marca_lote_certificado, :peso_certificado, :nro_envases_certificado, :fecha_muestreo_certificado, :otras_referencias_certificado, :precinto_certificado, :fecha_muestras_certificado, :fecha_finalizacion_ensayos_certificado, :nro_analisis_certificado, :pureza_semilla_pura_certificado, :materia_inerte_certificado, :pureza_otras_semillas_certificado, :pg_numero_dias_certificado, :pg_plantulas_normales_certificado, :pg_semillas_duras_certificado, :pg_semillas_frescas_certificado, :pg_plantulas_anormales_certificado, :pg_semillas_muertas_certificado, :pg_contenido_humedad_certificado, :pgc_numero_dias_certificado, :pgc_plantulas_normales_certificado, :pgc_semillas_duras_certificado, :pgc_semillas_frescas_certificado, :pgc_plantulas_anormales_certificado, :pgc_semillas_muertas_certificado, :vigor_nro_dias_certificado, :vigor_plantulas_normales_certificado, :ampara_totalidad_lote_certificado, :localidad_pais_certificado, :fecha_emision_certificado, :clase_materia_inerte_certificado, :otras_semillas_certificado, :otras_determinaciones_texto_certificado, :tetrazolio_detalle_certificado, :tetrazolio_viable_sin_defectos_certificado, :tetrazolio_viable_defectos_leves_certificado, :tetrazolio_viable_defectos_moderados_certificado, :tetrazolio_viable_defectos_severos_certificado, :tetrazolio_no_viables_certificado, :tetrazolio_vigor_alto_certificado, :tetrazolio_vigor_medio_certificado, :tetrazolio_vigor_bajo_certificado, :tetrazolio_danos_mecanicos_certificado, :tetrazolio_danos_ambientes_certificado, :tetrazolio_danos_chinches_certificado, :tetrazolio_danos_fracturas_certificado, :tetrazolio_danos_otros_certificado, :tetrazolio_duras_certificado)'
             );
             $statement->execute([
                 ':tipo_certificado' => $certForm['tipo_certificado'],
@@ -232,6 +288,21 @@ if (is_logged_in() && $_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['sav
                 ':clase_materia_inerte_certificado' => $certForm['clase_materia_inerte_certificado'],
                 ':otras_semillas_certificado' => $certForm['otras_semillas_certificado'],
                 ':otras_determinaciones_texto_certificado' => $certForm['otras_determinaciones_texto_certificado'] !== '' ? $certForm['otras_determinaciones_texto_certificado'] : null,
+                ':tetrazolio_detalle_certificado' => $certForm['tetrazolio_detalle_certificado'] !== '' ? $certForm['tetrazolio_detalle_certificado'] : null,
+                ':tetrazolio_viable_sin_defectos_certificado' => $certForm['tetrazolio_viable_sin_defectos_certificado'] !== '' ? (float) $certForm['tetrazolio_viable_sin_defectos_certificado'] : null,
+                ':tetrazolio_viable_defectos_leves_certificado' => $certForm['tetrazolio_viable_defectos_leves_certificado'] !== '' ? (float) $certForm['tetrazolio_viable_defectos_leves_certificado'] : null,
+                ':tetrazolio_viable_defectos_moderados_certificado' => $certForm['tetrazolio_viable_defectos_moderados_certificado'] !== '' ? (float) $certForm['tetrazolio_viable_defectos_moderados_certificado'] : null,
+                ':tetrazolio_viable_defectos_severos_certificado' => $certForm['tetrazolio_viable_defectos_severos_certificado'] !== '' ? (float) $certForm['tetrazolio_viable_defectos_severos_certificado'] : null,
+                ':tetrazolio_no_viables_certificado' => $certForm['tetrazolio_no_viables_certificado'] !== '' ? (float) $certForm['tetrazolio_no_viables_certificado'] : null,
+                ':tetrazolio_vigor_alto_certificado' => $certForm['tetrazolio_vigor_alto_certificado'] !== '' ? (float) $certForm['tetrazolio_vigor_alto_certificado'] : null,
+                ':tetrazolio_vigor_medio_certificado' => $certForm['tetrazolio_vigor_medio_certificado'] !== '' ? (float) $certForm['tetrazolio_vigor_medio_certificado'] : null,
+                ':tetrazolio_vigor_bajo_certificado' => $certForm['tetrazolio_vigor_bajo_certificado'] !== '' ? (float) $certForm['tetrazolio_vigor_bajo_certificado'] : null,
+                ':tetrazolio_danos_mecanicos_certificado' => $certForm['tetrazolio_danos_mecanicos_certificado'] !== '' ? (float) $certForm['tetrazolio_danos_mecanicos_certificado'] : null,
+                ':tetrazolio_danos_ambientes_certificado' => $certForm['tetrazolio_danos_ambientes_certificado'] !== '' ? (float) $certForm['tetrazolio_danos_ambientes_certificado'] : null,
+                ':tetrazolio_danos_chinches_certificado' => $certForm['tetrazolio_danos_chinches_certificado'] !== '' ? (float) $certForm['tetrazolio_danos_chinches_certificado'] : null,
+                ':tetrazolio_danos_fracturas_certificado' => $certForm['tetrazolio_danos_fracturas_certificado'] !== '' ? (float) $certForm['tetrazolio_danos_fracturas_certificado'] : null,
+                ':tetrazolio_danos_otros_certificado' => $certForm['tetrazolio_danos_otros_certificado'] !== '' ? (float) $certForm['tetrazolio_danos_otros_certificado'] : null,
+                ':tetrazolio_duras_certificado' => $certForm['tetrazolio_duras_certificado'] !== '' ? (float) $certForm['tetrazolio_duras_certificado'] : null,
             ]);
 
             $newCertificadoId = (int) db()->lastInsertId();
@@ -248,7 +319,10 @@ if (is_logged_in() && $_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['sav
             $successMessage = 'Certificado dado de alta correctamente.';
             $_SESSION['success_message'] = $successMessage;
             $_SESSION['new_certificado_id'] = $newCertificadoId;
-            $certPageDestino = $certForm['tipo_certificado'] === 'certificadoinase' ? 'CertificadoINASE' : 'Certificadogeneral';
+            $certPageDestino = [
+                'certificadoinase' => 'CertificadoINASE',
+                'certificadotetrazolio' => 'CertificadoTetrazolio',
+            ][$certForm['tipo_certificado']] ?? 'Certificadogeneral';
             $certForm = [
                 'tipo_certificado' => '',
                 'id_cliente_certificado' => '',
@@ -288,6 +362,21 @@ if (is_logged_in() && $_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['sav
                 'fecha_emision_certificado' => '',
                 'clase_materia_inerte_certificado' => '',
                 'otras_semillas_certificado' => '',
+                'tetrazolio_detalle_certificado' => '',
+                'tetrazolio_viable_sin_defectos_certificado' => '',
+                'tetrazolio_viable_defectos_leves_certificado' => '',
+                'tetrazolio_viable_defectos_moderados_certificado' => '',
+                'tetrazolio_viable_defectos_severos_certificado' => '',
+                'tetrazolio_no_viables_certificado' => '',
+                'tetrazolio_vigor_alto_certificado' => '',
+                'tetrazolio_vigor_medio_certificado' => '',
+                'tetrazolio_vigor_bajo_certificado' => '',
+                'tetrazolio_danos_mecanicos_certificado' => '',
+                'tetrazolio_danos_ambientes_certificado' => '',
+                'tetrazolio_danos_chinches_certificado' => '',
+                'tetrazolio_danos_fracturas_certificado' => '',
+                'tetrazolio_danos_otros_certificado' => '',
+                'tetrazolio_duras_certificado' => '',
             ];
 
             if (($page ?? 'dashboard') !== $certPageDestino) {

@@ -8,7 +8,12 @@ $cultivaresOptions = [];
 $determinacionesOptions = [];
 $certificados = [];
 
-$certTipoActual = $page === 'CertificadoINASE' ? 'certificadoinase' : 'certificadogeneral';
+$certTiposPorPagina = [
+    'Certificadogeneral' => 'certificadogeneral',
+    'CertificadoINASE' => 'certificadoinase',
+    'CertificadoTetrazolio' => 'certificadotetrazolio',
+];
+$certTipoActual = $certTiposPorPagina[$page] ?? 'certificadogeneral';
 
 try {
     $clientesOptionsStatement = db()->prepare('SELECT id_cliente, nombre_cliente FROM clientes WHERE id_empresa = :id_empresa ORDER BY nombre_cliente ASC');
@@ -193,7 +198,7 @@ try {
     <?php else: ?>
         <form method="post" class="row g-3 mt-1">
             <input type="hidden" name="save_certificado" value="1">
-            <input type="hidden" name="tipo_certificado" value="<?php echo $page === 'CertificadoINASE' ? 'certificadoinase' : 'certificadogeneral'; ?>">
+            <input type="hidden" name="tipo_certificado" value="<?php echo htmlspecialchars($certTipoActual, ENT_QUOTES, 'UTF-8'); ?>">
 
             <!-- Datos principales del certificado -->
             <div class="col-md-4">
@@ -220,25 +225,34 @@ try {
                 </select>
             </div>
 
-            <div class="col-md-4">
-                <label for="id_cultivar_certificado" class="form-label">Cultivar</label>
-                <select class="form-select" id="id_cultivar_certificado" name="id_cultivar_certificado">
-                    <option value="">Selecciona un cultivar</option>
-                    <?php foreach ($cultivaresOptions as $cultivar): ?>
-                        <option value="<?php echo htmlspecialchars((string) $cultivar['id_cultivar'], ENT_QUOTES, 'UTF-8'); ?>" data-especie="<?php echo htmlspecialchars((string) $cultivar['id_especie'], ENT_QUOTES, 'UTF-8'); ?>" <?php echo $certForm['id_cultivar_certificado'] === (string) $cultivar['id_cultivar'] ? 'selected' : ''; ?>>
-                            <?php echo htmlspecialchars((string) $cultivar['nombre_cultivar'], ENT_QUOTES, 'UTF-8'); ?>
-                        </option>
-                    <?php endforeach; ?>
-                </select>
-            </div>
+            <?php if ($page === 'CertificadoTetrazolio'): ?>
+                <div class="col-md-4">
+                    <label for="tetrazolio_detalle_certificado" class="form-label">Detalle</label>
+                    <input type="text" class="form-control" id="tetrazolio_detalle_certificado" name="tetrazolio_detalle_certificado" maxlength="255" value="<?php echo htmlspecialchars($certForm['tetrazolio_detalle_certificado'], ENT_QUOTES, 'UTF-8'); ?>">
+                </div>
+            <?php else: ?>
+                <div class="col-md-4">
+                    <label for="id_cultivar_certificado" class="form-label">Cultivar</label>
+                    <select class="form-select" id="id_cultivar_certificado" name="id_cultivar_certificado">
+                        <option value="">Selecciona un cultivar</option>
+                        <?php foreach ($cultivaresOptions as $cultivar): ?>
+                            <option value="<?php echo htmlspecialchars((string) $cultivar['id_cultivar'], ENT_QUOTES, 'UTF-8'); ?>" data-especie="<?php echo htmlspecialchars((string) $cultivar['id_especie'], ENT_QUOTES, 'UTF-8'); ?>" <?php echo $certForm['id_cultivar_certificado'] === (string) $cultivar['id_cultivar'] ? 'selected' : ''; ?>>
+                                <?php echo htmlspecialchars((string) $cultivar['nombre_cultivar'], ENT_QUOTES, 'UTF-8'); ?>
+                            </option>
+                        <?php endforeach; ?>
+                    </select>
+                </div>
+            <?php endif; ?>
 
             <hr class="my-4">
             <h5>Información del Lote</h5>
 
-            <div class="col-md-4">
-                <label for="marca_lote_certificado" class="form-label">Marca/Lote</label>
-                <input type="text" class="form-control" id="marca_lote_certificado" name="marca_lote_certificado" maxlength="255" value="<?php echo htmlspecialchars($certForm['marca_lote_certificado'], ENT_QUOTES, 'UTF-8'); ?>">
-            </div>
+            <?php if ($page !== 'CertificadoTetrazolio'): ?>
+                <div class="col-md-4">
+                    <label for="marca_lote_certificado" class="form-label">Marca/Lote</label>
+                    <input type="text" class="form-control" id="marca_lote_certificado" name="marca_lote_certificado" maxlength="255" value="<?php echo htmlspecialchars($certForm['marca_lote_certificado'], ENT_QUOTES, 'UTF-8'); ?>">
+                </div>
+            <?php endif; ?>
 
             <div class="col-md-4">
                 <label for="peso_certificado" class="form-label">Peso (kg)</label>
@@ -283,6 +297,62 @@ try {
                 <input type="date" class="form-control" id="fecha_finalizacion_ensayos_certificado" name="fecha_finalizacion_ensayos_certificado" value="<?php echo htmlspecialchars($certForm['fecha_finalizacion_ensayos_certificado'], ENT_QUOTES, 'UTF-8'); ?>" required>
             </div>
 
+            <?php if ($page === 'CertificadoTetrazolio'): ?>
+                <hr class="my-4">
+                <h5>Viabilidad por tetrazolio (%)</h5>
+                <p class="text-muted mb-0">Las cinco categorías deben sumar 100. El total de viabilidad se calcula únicamente con las cuatro categorías viables.</p>
+
+                <?php
+                $tetrazolioViabilidadFields = [
+                    'tetrazolio_viable_sin_defectos_certificado' => '1. Viable sin defectos',
+                    'tetrazolio_viable_defectos_leves_certificado' => '2. Viable defectos leves',
+                    'tetrazolio_viable_defectos_moderados_certificado' => '3. Viable defectos moderados',
+                    'tetrazolio_viable_defectos_severos_certificado' => '4. Viable defectos severos (límite crítico)',
+                    'tetrazolio_no_viables_certificado' => '5. No viables',
+                ];
+                ?>
+                <?php foreach ($tetrazolioViabilidadFields as $field => $label): ?>
+                    <div class="col-md">
+                        <label for="<?php echo $field; ?>" class="form-label"><?php echo htmlspecialchars($label, ENT_QUOTES, 'UTF-8'); ?> *</label>
+                        <input type="number" class="form-control" id="<?php echo $field; ?>" name="<?php echo $field; ?>" step="0.01" min="0" max="100" value="<?php echo htmlspecialchars($certForm[$field], ENT_QUOTES, 'UTF-8'); ?>" required>
+                    </div>
+                <?php endforeach; ?>
+
+                <hr class="my-4">
+                <h5>Vigor por tetrazolio (%)</h5>
+                <?php
+                $tetrazolioVigorFields = [
+                    'tetrazolio_vigor_alto_certificado' => 'A. Vigor alto',
+                    'tetrazolio_vigor_medio_certificado' => 'B. Vigor medio',
+                    'tetrazolio_vigor_bajo_certificado' => 'C. Vigor bajo',
+                ];
+                ?>
+                <?php foreach ($tetrazolioVigorFields as $field => $label): ?>
+                    <div class="col-md-4">
+                        <label for="<?php echo $field; ?>" class="form-label"><?php echo htmlspecialchars($label, ENT_QUOTES, 'UTF-8'); ?></label>
+                        <input type="number" class="form-control" id="<?php echo $field; ?>" name="<?php echo $field; ?>" step="0.01" min="0" max="100" value="<?php echo htmlspecialchars($certForm[$field], ENT_QUOTES, 'UTF-8'); ?>">
+                    </div>
+                <?php endforeach; ?>
+
+                <hr class="my-4">
+                <h5>Daños acumulados (%)</h5>
+                <?php
+                $tetrazolioDanosFields = [
+                    'tetrazolio_danos_mecanicos_certificado' => 'Mecánicos',
+                    'tetrazolio_danos_ambientes_certificado' => 'Ambientes',
+                    'tetrazolio_danos_chinches_certificado' => 'Chinches',
+                    'tetrazolio_danos_fracturas_certificado' => 'Fracturas',
+                    'tetrazolio_danos_otros_certificado' => 'Otros',
+                    'tetrazolio_duras_certificado' => 'Duras',
+                ];
+                ?>
+                <?php foreach ($tetrazolioDanosFields as $field => $label): ?>
+                    <div class="col-md-2">
+                        <label for="<?php echo $field; ?>" class="form-label"><?php echo htmlspecialchars($label, ENT_QUOTES, 'UTF-8'); ?></label>
+                        <input type="number" class="form-control" id="<?php echo $field; ?>" name="<?php echo $field; ?>" step="0.01" min="0" max="100" value="<?php echo htmlspecialchars($certForm[$field], ENT_QUOTES, 'UTF-8'); ?>">
+                    </div>
+                <?php endforeach; ?>
+            <?php else: ?>
             <hr class="my-4">
             <h5>Pureza (%)</h5>
 
@@ -417,6 +487,7 @@ try {
                 <label for="otras_determinaciones_texto_certificado" class="form-label">Otra determinación (si no está en la lista)</label>
                 <input type="text" class="form-control" id="otras_determinaciones_texto_certificado" name="otras_determinaciones_texto_certificado" maxlength="255" value="<?php echo htmlspecialchars($certForm['otras_determinaciones_texto_certificado'], ENT_QUOTES, 'UTF-8'); ?>">
             </div>
+            <?php endif; ?>
 
             <div class="col-md-2">
                 <label for="ampara_totalidad_lote_certificado" class="form-label">Ampara la totalidad del Lote?</label>
