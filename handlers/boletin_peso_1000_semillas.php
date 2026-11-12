@@ -2,6 +2,8 @@
 
 declare(strict_types=1);
 
+require_once __DIR__ . '/../includes/boletin_edicion.php';
+
 if (is_logged_in() && isset($_GET['boletin_peso_pdf'])) {
     $boletinId = filter_var($_GET['boletin_peso_pdf'], FILTER_VALIDATE_INT, ['options' => ['min_range' => 1]]);
 
@@ -27,6 +29,22 @@ if (is_logged_in() && isset($_GET['boletin_peso_pdf'])) {
 }
 
 if (is_logged_in() && $_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['save_boletin_peso'])) {
+    $ingresoAsociadoId = null;
+    if (isset($_POST['ingreso_id']) && $_POST['ingreso_id'] !== '') {
+        $ingresoAsociadoId = filter_var($_POST['ingreso_id'], FILTER_VALIDATE_INT, ['options' => ['min_range' => 1]]);
+        if ($ingresoAsociadoId === false) {
+            $errors[] = 'El ingreso asociado no es válido.';
+        }
+    }
+    $boletinPesoEditId = null;
+    try {
+        $boletinPesoEditId = boletin_edicion_id();
+        if ($boletinPesoEditId !== null) {
+            boletin_edicion_cabecera('peso_1000_semillas', $boletinPesoEditId);
+        }
+    } catch (Throwable $throwable) {
+        $errors[] = 'El boletín a editar no es válido o no pertenece a la empresa activa.';
+    }
     $boletinPesoForm['id_cliente'] = trim((string) ($_POST['id_cliente'] ?? ''));
     $boletinPesoForm['id_especie'] = trim((string) ($_POST['id_especie'] ?? ''));
     $boletinPesoForm['muestra_nro'] = trim((string) ($_POST['muestra_nro'] ?? ''));
@@ -95,7 +113,7 @@ if (is_logged_in() && $_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['sav
             $statement = db()->prepare(
                 'INSERT INTO boletines_peso_1000_semillas (id_empresa, id_usuario, id_cliente, id_especie, muestra_nro, fecha_boletin, analista, suma_pesos, promedio_peso, varianza, desvio_estandar, coeficiente_variacion, resultado_peso_mil, observaciones) VALUES (:id_empresa, :id_usuario, :id_cliente, :id_especie, :muestra_nro, :fecha_boletin, :analista, :suma_pesos, :promedio_peso, :varianza, :desvio_estandar, :coeficiente_variacion, :resultado_peso_mil, :observaciones)'
             );
-            $statement->execute([
+            $parametrosCabecera = [
                 ':id_empresa' => current_empresa_id(),
                 ':id_usuario' => $_SESSION['user']['id'] ?? null,
                 ':id_cliente' => $clienteId,
@@ -110,9 +128,15 @@ if (is_logged_in() && $_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['sav
                 ':coeficiente_variacion' => $resultado['coeficiente_variacion'],
                 ':resultado_peso_mil' => $resultado['resultado_peso_mil'],
                 ':observaciones' => $boletinPesoForm['observaciones'] !== '' ? $boletinPesoForm['observaciones'] : null,
-            ]);
+            ];
 
-            $newBoletinPesoId = (int) db()->lastInsertId();
+            if ($boletinPesoEditId !== null) {
+                boletin_edicion_actualizar('peso_1000_semillas', $boletinPesoEditId, $parametrosCabecera);
+                $newBoletinPesoId = $boletinPesoEditId;
+            } else {
+                $statement->execute($parametrosCabecera);
+                $newBoletinPesoId = (int) db()->lastInsertId();
+            }
 
             $repeticionStatement = db()->prepare(
                 'INSERT INTO boletin_peso_repeticiones (id_boletin_peso, nro_repeticion, peso_repeticion) VALUES (:id_boletin_peso, :nro_repeticion, :peso_repeticion)'
@@ -123,6 +147,10 @@ if (is_logged_in() && $_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['sav
                     ':nro_repeticion' => $index + 1,
                     ':peso_repeticion' => $peso,
                 ]);
+            }
+
+            if ($ingresoAsociadoId !== null && $ingresoAsociadoId !== false) {
+                libro_ingreso_vincular_boletin((int) $ingresoAsociadoId, 'boletin_peso_1000_semillas', $newBoletinPesoId);
             }
 
             db()->commit();

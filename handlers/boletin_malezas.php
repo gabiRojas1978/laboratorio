@@ -2,6 +2,8 @@
 
 declare(strict_types=1);
 
+require_once __DIR__ . '/../includes/boletin_edicion.php';
+
 if (is_logged_in() && isset($_GET['boletin_malezas_pdf'])) {
     $boletinId = filter_var($_GET['boletin_malezas_pdf'], FILTER_VALIDATE_INT, ['options' => ['min_range' => 1]]);
     if ($boletinId === false) {
@@ -26,6 +28,22 @@ if (is_logged_in() && isset($_GET['boletin_malezas_pdf'])) {
 }
 
 if (is_logged_in() && $_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['save_boletin_malezas'])) {
+    $ingresoAsociadoId = null;
+    if (isset($_POST['ingreso_id']) && $_POST['ingreso_id'] !== '') {
+        $ingresoAsociadoId = filter_var($_POST['ingreso_id'], FILTER_VALIDATE_INT, ['options' => ['min_range' => 1]]);
+        if ($ingresoAsociadoId === false) {
+            $errors[] = 'El ingreso asociado no es válido.';
+        }
+    }
+    $boletinMalezasEditId = null;
+    try {
+        $boletinMalezasEditId = boletin_edicion_id();
+        if ($boletinMalezasEditId !== null) {
+            boletin_edicion_cabecera('malezas', $boletinMalezasEditId);
+        }
+    } catch (Throwable $throwable) {
+        $errors[] = 'El boletín a editar no es válido o no pertenece a la empresa activa.';
+    }
     foreach (
         [
             'id_cliente',
@@ -155,7 +173,7 @@ if (is_logged_in() && $_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['sav
                 'INSERT INTO boletines_malezas (id_empresa, id_cliente, id_usuario, id_especie, analisis_nro, muestra_nro, especie_remitente, especie_latin, lote, tipo_analisis, peso_analisis, fecha_analisis, analista, observaciones, otras_determinaciones_texto)
                  VALUES (:id_empresa, :id_cliente, :id_usuario, :id_especie, :analisis_nro, :muestra_nro, :especie_remitente, :especie_latin, :lote, :tipo_analisis, :peso_analisis, :fecha_analisis, :analista, :observaciones, :otras_determinaciones_texto)'
             );
-            $insert->execute([
+            $parametrosCabecera = [
                 ':id_empresa' => current_empresa_id(),
                 ':id_cliente' => $clienteId,
                 ':id_usuario' => $_SESSION['user']['id'] ?? null,
@@ -171,8 +189,14 @@ if (is_logged_in() && $_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['sav
                 ':analista' => $boletinMalezasForm['analista'] !== '' ? $boletinMalezasForm['analista'] : null,
                 ':observaciones' => $boletinMalezasForm['observaciones'] !== '' ? $boletinMalezasForm['observaciones'] : null,
                 ':otras_determinaciones_texto' => $boletinMalezasForm['otras_determinaciones_texto'] !== '' ? $boletinMalezasForm['otras_determinaciones_texto'] : null,
-            ]);
-            $boletinId = (int) db()->lastInsertId();
+            ];
+            if ($boletinMalezasEditId !== null) {
+                boletin_edicion_actualizar('malezas', $boletinMalezasEditId, $parametrosCabecera);
+                $boletinId = $boletinMalezasEditId;
+            } else {
+                $insert->execute($parametrosCabecera);
+                $boletinId = (int) db()->lastInsertId();
+            }
 
             if ($boletinMalezasForm['id_otras_determinaciones'] !== []) {
                 $insertDetermination = db()->prepare(
@@ -199,6 +223,9 @@ if (is_logged_in() && $_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['sav
                         ':numero_semillas' => $row['numero_semillas'],
                     ]);
                 }
+            }
+            if ($ingresoAsociadoId !== null && $ingresoAsociadoId !== false) {
+                libro_ingreso_vincular_boletin((int) $ingresoAsociadoId, 'boletin_malezas', $boletinId);
             }
             db()->commit();
 

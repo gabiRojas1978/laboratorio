@@ -72,20 +72,25 @@ for ($numero = 1; $numero <= 4; $numero++) {
     $repeticionesPdfPrueba[] = $repeticion;
 }
 
-foreach (['primer_conteo', 'finalizado'] as $estado) {
-    foreach (['', implode("\n", array_fill(0, 8, 'Observacion de prueba para verificar el espacio disponible.'))] as $observaciones) {
-        $boletinPdfPrueba['estado'] = $estado;
-        $boletinPdfPrueba['observaciones'] = $observaciones;
-        $resultado = build_boletin_germinacion_pdf(1);
-        if ($resultado === null || !str_starts_with($resultado['content'], '%PDF-')) {
-            throw new RuntimeException('No se genero el PDF de prueba.');
-        }
-        $paginas = preg_match_all('/\/Type\s*\/Page\b/', $resultado['content']);
-        if ($paginas !== 1) {
-            throw new RuntimeException('El boletin debe ocupar una hoja: ' . $estado . ', '
-                . ($observaciones === '' ? 'sin observaciones' : 'ocho lineas de observaciones') . ', paginas: ' . $paginas);
+foreach (['germinacion', 'cold_test', 'envejecimiento_acelerado'] as $tipoBoletin) {
+    foreach (['primer_conteo', 'finalizado'] as $estado) {
+        foreach (['', implode("\n", array_fill(0, 8, 'Observacion de prueba para verificar el espacio disponible.'))] as $observaciones) {
+            $boletinPdfPrueba['estado'] = $estado;
+            $boletinPdfPrueba['observaciones'] = $observaciones;
+            $resultado = build_boletin_germinacion_pdf(1, $tipoBoletin);
+            if ($resultado === null || !str_starts_with($resultado['content'], '%PDF-')) {
+                throw new RuntimeException('No se genero el PDF de prueba.');
+            }
+            if (!str_starts_with($resultado['filename'], 'boletin_' . $tipoBoletin . '_')) {
+                throw new RuntimeException('El nombre del PDF no corresponde al tipo de boletin: ' . $tipoBoletin);
+            }
+            $paginas = preg_match_all('/\/Type\s*\/Page\b/', $resultado['content']);
+            if ($paginas !== 1) {
+                throw new RuntimeException('El boletin debe ocupar una hoja: ' . $tipoBoletin . ', ' . $estado . ', '
+                    . ($observaciones === '' ? 'sin observaciones' : 'ocho lineas de observaciones') . ', paginas: ' . $paginas);
+            }
         }
     }
 }
 
-echo "OK: PDF A4 de una hoja en ambos estados, sin observaciones y con ocho lineas.\n";
+echo "OK: PDFs A4 de una hoja para los tres tipos, en ambos estados y con ocho lineas de observaciones.\n";

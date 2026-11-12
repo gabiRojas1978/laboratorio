@@ -45,6 +45,14 @@ if (is_logged_in() && $_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['sav
     $certForm['localidad_pais_certificado'] = trim((string) ($_POST['localidad_pais_certificado'] ?? ''));
     $certForm['fecha_emision_certificado'] = trim((string) ($_POST['fecha_emision_certificado'] ?? ''));
     $certForm['otras_referencias_certificado'] = trim((string) ($_POST['otras_referencias_certificado'] ?? ''));
+    $certForm['hipoclorito_max_10_certificado'] = trim((string) ($_POST['hipoclorito_max_10_certificado'] ?? ''));
+    $certForm['bioensayo_enlist_certificado'] = trim((string) ($_POST['bioensayo_enlist_certificado'] ?? ''));
+    $certForm['peroxidasa_positivas_certificado'] = trim((string) ($_POST['peroxidasa_positivas_certificado'] ?? ''));
+    $certForm['peroxidasa_negativas_certificado'] = trim((string) ($_POST['peroxidasa_negativas_certificado'] ?? ''));
+    $certForm['contam_hilo_cantidad_semillas_certificado'] = trim((string) ($_POST['contam_hilo_cantidad_semillas_certificado'] ?? ''));
+    $certForm['contam_hilo_color_contaminante_certificado'] = trim((string) ($_POST['contam_hilo_color_contaminante_certificado'] ?? ''));
+    $certForm['hipocotilo_variedad_certificado'] = trim((string) ($_POST['hipocotilo_variedad_certificado'] ?? ''));
+    $certForm['hipocotilo_color_contaminante_certificado'] = trim((string) ($_POST['hipocotilo_color_contaminante_certificado'] ?? ''));
     $certForm['clase_materia_inerte_certificado'] = trim((string) ($_POST['clase_materia_inerte_certificado'] ?? ''));
     $certForm['otras_semillas_certificado'] = trim((string) ($_POST['otras_semillas_certificado'] ?? ''));
     $certForm['tetrazolio_detalle_certificado'] = trim((string) ($_POST['tetrazolio_detalle_certificado'] ?? ''));
@@ -66,6 +74,37 @@ if (is_logged_in() && $_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['sav
     ];
     foreach ($tetrazolioNumericFields as $tetrazolioNumericField) {
         $certForm[$tetrazolioNumericField] = trim((string) ($_POST[$tetrazolioNumericField] ?? ''));
+    }
+
+    if (mb_strlen($certForm['hipoclorito_max_10_certificado'], 'UTF-8') > 255) {
+        $errors[] = 'El campo Hipoclorito max 10% no puede superar los 255 caracteres.';
+    }
+
+    if (mb_strlen($certForm['bioensayo_enlist_certificado'], 'UTF-8') > 255) {
+        $errors[] = 'El campo Bioensayo Enlist no puede superar los 255 caracteres.';
+    }
+
+    foreach ([
+        'peroxidasa_positivas_certificado',
+        'peroxidasa_negativas_certificado',
+        'contam_hilo_cantidad_semillas_certificado',
+    ] as $percentageField) {
+        $percentage = $certForm[$percentageField];
+        if ($percentage !== '' && (!is_numeric($percentage) || (float) $percentage < 0 || (float) $percentage > 100)) {
+            $errors[] = 'Los porcentajes de Peroxidasa y Contam. x hilo deben ser valores entre 0 y 100.';
+            break;
+        }
+    }
+
+    foreach ([
+        'contam_hilo_color_contaminante_certificado',
+        'hipocotilo_variedad_certificado',
+        'hipocotilo_color_contaminante_certificado',
+    ] as $textField) {
+        if (mb_strlen($certForm[$textField], 'UTF-8') > 255) {
+            $errors[] = 'Los campos de texto de las determinaciones adicionales no pueden superar los 255 caracteres.';
+            break;
+        }
     }
 
     if ($certForm['ampara_totalidad_lote_certificado'] !== '' && !in_array($certForm['ampara_totalidad_lote_certificado'], ['S', 'N'], true)) {
@@ -246,7 +285,7 @@ if (is_logged_in() && $_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['sav
     if (!$errors) {
         try {
             $statement = db()->prepare(
-                'INSERT INTO certificados (tipo_certificado, id_empresa, id_usuario_certificado, id_cliente_certificado, id_especie_certificado, id_cultivar_certificado, marca_lote_certificado, peso_certificado, nro_envases_certificado, fecha_muestreo_certificado, otras_referencias_certificado, precinto_certificado, fecha_muestras_certificado, fecha_finalizacion_ensayos_certificado, nro_analisis_certificado, pureza_semilla_pura_certificado, materia_inerte_certificado, pureza_otras_semillas_certificado, pg_numero_dias_certificado, pg_plantulas_normales_certificado, pg_semillas_duras_certificado, pg_semillas_frescas_certificado, pg_plantulas_anormales_certificado, pg_semillas_muertas_certificado, pg_contenido_humedad_certificado, pgc_numero_dias_certificado, pgc_plantulas_normales_certificado, pgc_semillas_duras_certificado, pgc_semillas_frescas_certificado, pgc_plantulas_anormales_certificado, pgc_semillas_muertas_certificado, vigor_nro_dias_certificado, vigor_plantulas_normales_certificado, ampara_totalidad_lote_certificado, localidad_pais_certificado, fecha_emision_certificado, clase_materia_inerte_certificado, otras_semillas_certificado, otras_determinaciones_texto_certificado, tetrazolio_detalle_certificado, tetrazolio_viable_sin_defectos_certificado, tetrazolio_viable_defectos_leves_certificado, tetrazolio_viable_defectos_moderados_certificado, tetrazolio_viable_defectos_severos_certificado, tetrazolio_no_viables_certificado, tetrazolio_vigor_alto_certificado, tetrazolio_vigor_medio_certificado, tetrazolio_vigor_bajo_certificado, tetrazolio_danos_mecanicos_certificado, tetrazolio_danos_ambientes_certificado, tetrazolio_danos_chinches_certificado, tetrazolio_danos_fracturas_certificado, tetrazolio_danos_otros_certificado, tetrazolio_duras_certificado) VALUES (:tipo_certificado, :id_empresa, :id_usuario_certificado, :id_cliente_certificado, :id_especie_certificado, :id_cultivar_certificado, :marca_lote_certificado, :peso_certificado, :nro_envases_certificado, :fecha_muestreo_certificado, :otras_referencias_certificado, :precinto_certificado, :fecha_muestras_certificado, :fecha_finalizacion_ensayos_certificado, :nro_analisis_certificado, :pureza_semilla_pura_certificado, :materia_inerte_certificado, :pureza_otras_semillas_certificado, :pg_numero_dias_certificado, :pg_plantulas_normales_certificado, :pg_semillas_duras_certificado, :pg_semillas_frescas_certificado, :pg_plantulas_anormales_certificado, :pg_semillas_muertas_certificado, :pg_contenido_humedad_certificado, :pgc_numero_dias_certificado, :pgc_plantulas_normales_certificado, :pgc_semillas_duras_certificado, :pgc_semillas_frescas_certificado, :pgc_plantulas_anormales_certificado, :pgc_semillas_muertas_certificado, :vigor_nro_dias_certificado, :vigor_plantulas_normales_certificado, :ampara_totalidad_lote_certificado, :localidad_pais_certificado, :fecha_emision_certificado, :clase_materia_inerte_certificado, :otras_semillas_certificado, :otras_determinaciones_texto_certificado, :tetrazolio_detalle_certificado, :tetrazolio_viable_sin_defectos_certificado, :tetrazolio_viable_defectos_leves_certificado, :tetrazolio_viable_defectos_moderados_certificado, :tetrazolio_viable_defectos_severos_certificado, :tetrazolio_no_viables_certificado, :tetrazolio_vigor_alto_certificado, :tetrazolio_vigor_medio_certificado, :tetrazolio_vigor_bajo_certificado, :tetrazolio_danos_mecanicos_certificado, :tetrazolio_danos_ambientes_certificado, :tetrazolio_danos_chinches_certificado, :tetrazolio_danos_fracturas_certificado, :tetrazolio_danos_otros_certificado, :tetrazolio_duras_certificado)'
+                'INSERT INTO certificados (tipo_certificado, id_empresa, id_usuario_certificado, id_cliente_certificado, id_especie_certificado, id_cultivar_certificado, marca_lote_certificado, peso_certificado, nro_envases_certificado, fecha_muestreo_certificado, otras_referencias_certificado, precinto_certificado, fecha_muestras_certificado, fecha_finalizacion_ensayos_certificado, nro_analisis_certificado, pureza_semilla_pura_certificado, materia_inerte_certificado, pureza_otras_semillas_certificado, pg_numero_dias_certificado, pg_plantulas_normales_certificado, pg_semillas_duras_certificado, pg_semillas_frescas_certificado, pg_plantulas_anormales_certificado, pg_semillas_muertas_certificado, pg_contenido_humedad_certificado, pgc_numero_dias_certificado, pgc_plantulas_normales_certificado, pgc_semillas_duras_certificado, pgc_semillas_frescas_certificado, pgc_plantulas_anormales_certificado, pgc_semillas_muertas_certificado, vigor_nro_dias_certificado, vigor_plantulas_normales_certificado, ampara_totalidad_lote_certificado, localidad_pais_certificado, fecha_emision_certificado, clase_materia_inerte_certificado, otras_semillas_certificado, hipoclorito_max_10_certificado, bioensayo_enlist_certificado, peroxidasa_positivas_certificado, peroxidasa_negativas_certificado, contam_hilo_cantidad_semillas_certificado, contam_hilo_color_contaminante_certificado, hipocotilo_variedad_certificado, hipocotilo_color_contaminante_certificado, otras_determinaciones_texto_certificado, tetrazolio_detalle_certificado, tetrazolio_viable_sin_defectos_certificado, tetrazolio_viable_defectos_leves_certificado, tetrazolio_viable_defectos_moderados_certificado, tetrazolio_viable_defectos_severos_certificado, tetrazolio_no_viables_certificado, tetrazolio_vigor_alto_certificado, tetrazolio_vigor_medio_certificado, tetrazolio_vigor_bajo_certificado, tetrazolio_danos_mecanicos_certificado, tetrazolio_danos_ambientes_certificado, tetrazolio_danos_chinches_certificado, tetrazolio_danos_fracturas_certificado, tetrazolio_danos_otros_certificado, tetrazolio_duras_certificado) VALUES (:tipo_certificado, :id_empresa, :id_usuario_certificado, :id_cliente_certificado, :id_especie_certificado, :id_cultivar_certificado, :marca_lote_certificado, :peso_certificado, :nro_envases_certificado, :fecha_muestreo_certificado, :otras_referencias_certificado, :precinto_certificado, :fecha_muestras_certificado, :fecha_finalizacion_ensayos_certificado, :nro_analisis_certificado, :pureza_semilla_pura_certificado, :materia_inerte_certificado, :pureza_otras_semillas_certificado, :pg_numero_dias_certificado, :pg_plantulas_normales_certificado, :pg_semillas_duras_certificado, :pg_semillas_frescas_certificado, :pg_plantulas_anormales_certificado, :pg_semillas_muertas_certificado, :pg_contenido_humedad_certificado, :pgc_numero_dias_certificado, :pgc_plantulas_normales_certificado, :pgc_semillas_duras_certificado, :pgc_semillas_frescas_certificado, :pgc_plantulas_anormales_certificado, :pgc_semillas_muertas_certificado, :vigor_nro_dias_certificado, :vigor_plantulas_normales_certificado, :ampara_totalidad_lote_certificado, :localidad_pais_certificado, :fecha_emision_certificado, :clase_materia_inerte_certificado, :otras_semillas_certificado, :hipoclorito_max_10_certificado, :bioensayo_enlist_certificado, :peroxidasa_positivas_certificado, :peroxidasa_negativas_certificado, :contam_hilo_cantidad_semillas_certificado, :contam_hilo_color_contaminante_certificado, :hipocotilo_variedad_certificado, :hipocotilo_color_contaminante_certificado, :otras_determinaciones_texto_certificado, :tetrazolio_detalle_certificado, :tetrazolio_viable_sin_defectos_certificado, :tetrazolio_viable_defectos_leves_certificado, :tetrazolio_viable_defectos_moderados_certificado, :tetrazolio_viable_defectos_severos_certificado, :tetrazolio_no_viables_certificado, :tetrazolio_vigor_alto_certificado, :tetrazolio_vigor_medio_certificado, :tetrazolio_vigor_bajo_certificado, :tetrazolio_danos_mecanicos_certificado, :tetrazolio_danos_ambientes_certificado, :tetrazolio_danos_chinches_certificado, :tetrazolio_danos_fracturas_certificado, :tetrazolio_danos_otros_certificado, :tetrazolio_duras_certificado)'
             );
             $statement->execute([
                 ':tipo_certificado' => $certForm['tipo_certificado'],
@@ -287,6 +326,14 @@ if (is_logged_in() && $_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['sav
                 ':fecha_emision_certificado' => $certForm['fecha_emision_certificado'] !== '' ? $certForm['fecha_emision_certificado'] : null,
                 ':clase_materia_inerte_certificado' => $certForm['clase_materia_inerte_certificado'],
                 ':otras_semillas_certificado' => $certForm['otras_semillas_certificado'],
+                ':hipoclorito_max_10_certificado' => $certForm['hipoclorito_max_10_certificado'] !== '' ? $certForm['hipoclorito_max_10_certificado'] : null,
+                ':bioensayo_enlist_certificado' => $certForm['bioensayo_enlist_certificado'] !== '' ? $certForm['bioensayo_enlist_certificado'] : null,
+                ':peroxidasa_positivas_certificado' => $certForm['peroxidasa_positivas_certificado'] !== '' ? (float) $certForm['peroxidasa_positivas_certificado'] : null,
+                ':peroxidasa_negativas_certificado' => $certForm['peroxidasa_negativas_certificado'] !== '' ? (float) $certForm['peroxidasa_negativas_certificado'] : null,
+                ':contam_hilo_cantidad_semillas_certificado' => $certForm['contam_hilo_cantidad_semillas_certificado'] !== '' ? (float) $certForm['contam_hilo_cantidad_semillas_certificado'] : null,
+                ':contam_hilo_color_contaminante_certificado' => $certForm['contam_hilo_color_contaminante_certificado'] !== '' ? $certForm['contam_hilo_color_contaminante_certificado'] : null,
+                ':hipocotilo_variedad_certificado' => $certForm['hipocotilo_variedad_certificado'] !== '' ? $certForm['hipocotilo_variedad_certificado'] : null,
+                ':hipocotilo_color_contaminante_certificado' => $certForm['hipocotilo_color_contaminante_certificado'] !== '' ? $certForm['hipocotilo_color_contaminante_certificado'] : null,
                 ':otras_determinaciones_texto_certificado' => $certForm['otras_determinaciones_texto_certificado'] !== '' ? $certForm['otras_determinaciones_texto_certificado'] : null,
                 ':tetrazolio_detalle_certificado' => $certForm['tetrazolio_detalle_certificado'] !== '' ? $certForm['tetrazolio_detalle_certificado'] : null,
                 ':tetrazolio_viable_sin_defectos_certificado' => $certForm['tetrazolio_viable_sin_defectos_certificado'] !== '' ? (float) $certForm['tetrazolio_viable_sin_defectos_certificado'] : null,
@@ -360,6 +407,14 @@ if (is_logged_in() && $_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['sav
                 'ampara_totalidad_lote_certificado' => 'N',
                 'localidad_pais_certificado' => '',
                 'fecha_emision_certificado' => '',
+                'hipoclorito_max_10_certificado' => '',
+                'bioensayo_enlist_certificado' => '',
+                'peroxidasa_positivas_certificado' => '',
+                'peroxidasa_negativas_certificado' => '',
+                'contam_hilo_cantidad_semillas_certificado' => '',
+                'contam_hilo_color_contaminante_certificado' => '',
+                'hipocotilo_variedad_certificado' => '',
+                'hipocotilo_color_contaminante_certificado' => '',
                 'clase_materia_inerte_certificado' => '',
                 'otras_semillas_certificado' => '',
                 'tetrazolio_detalle_certificado' => '',

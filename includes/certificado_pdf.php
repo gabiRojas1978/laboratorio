@@ -2,6 +2,29 @@
 
 declare(strict_types=1);
 
+function certificate_optional_results_html(array $certificate): string
+{
+    $renderLine = static function (string $label, mixed $value, bool $percentage = false): string {
+        $text = trim((string) ($value ?? ''));
+        if ($text === '') {
+            return '';
+        }
+
+        $formattedValue = $percentage ? format_percent_value($text) . '%' : $text;
+        return '<div class="line-label">' . htmlspecialchars($label, ENT_QUOTES, 'UTF-8')
+            . ': <span class="line-value">' . htmlspecialchars($formattedValue, ENT_QUOTES, 'UTF-8') . '</span></div>';
+    };
+
+    return $renderLine('Hipoclorito max 10%', $certificate['hipoclorito_max_10_certificado'] ?? '')
+        . $renderLine('Bioensayo Enlist', $certificate['bioensayo_enlist_certificado'] ?? '')
+        . $renderLine('Peroxidasa - Positivas (%)', $certificate['peroxidasa_positivas_certificado'] ?? '', true)
+        . $renderLine('Peroxidasa - Negativas (%)', $certificate['peroxidasa_negativas_certificado'] ?? '', true)
+        . $renderLine('Contam. x hilo (250gr) - Cantidad de semillas (%)', $certificate['contam_hilo_cantidad_semillas_certificado'] ?? '', true)
+        . $renderLine('Contam. x hilo (250gr) - Color contaminante', $certificate['contam_hilo_color_contaminante_certificado'] ?? '')
+        . $renderLine('Hipocotilo - Variedad', $certificate['hipocotilo_variedad_certificado'] ?? '')
+        . $renderLine('Hipocotilo - Color contaminante', $certificate['hipocotilo_color_contaminante_certificado'] ?? '');
+}
+
 function build_certificado_pdf(int $certificadoId): ?array
 {
     require_once __DIR__ . '/../vendor/autoload.php';
@@ -64,8 +87,10 @@ function build_certificado_pdf(int $certificadoId): ?array
     $detalleDeterminaciones = $otrasDet !== '' ? $otrasDet : 'N';
 
     $tipoCertificado = trim((string) ($certificadoPdf['tipo_certificado'] ?? ''));
+    $esCertificadoGeneral = $tipoCertificado === 'certificadogeneral';
     $esCertificadoInase = $tipoCertificado === 'certificadoinase';
     $esCertificadoTetrazolio = $tipoCertificado === 'certificadotetrazolio';
+    $determinacionesAdicionalesHtml = $esCertificadoGeneral ? certificate_optional_results_html($certificadoPdf) : '';
     $membreteImagePath = certificate_logo_path(current_empresa_id());
     $brandHeaderHtml = '';
 
@@ -188,7 +213,7 @@ function build_certificado_pdf(int $certificadoId): ?array
             <tr class="bold">
                 <td colspan="3">PUREZA<br><span class="small">(% en peso)</span></td>
                 <td colspan="6">' . $germinacionHeading . '<br><span class="small">(% en número)</span></td>
-                <td colspan="2">CONTENIDO DE HUMEDAD<br><span class="small">(%)</span></td>
+                <td colspan="2">CONTENIDO DE HUMEDAD<br><span class="small">' . ($esCertificadoInase ? '(%)' : '(Higrómetro Delver) (%)') . '</span></td>
             </tr>
             <tr class="bold mid">
                 <td>Semilla<br>Pura</td>
@@ -219,6 +244,7 @@ function build_certificado_pdf(int $certificadoId): ?array
 
         <div class="line-label">Clase de Materia Inerte: <span class="line-value">' . htmlspecialchars(format_text_value($certificadoPdf['clase_materia_inerte_certificado'] ?? '', ' '), ENT_QUOTES, 'UTF-8') . '</span></div>
         <div class="line-label">Otras Semillas: <span class="line-value">' . htmlspecialchars(format_text_value($certificadoPdf['otras_semillas_certificado'] ?? '', ' '), ENT_QUOTES, 'UTF-8') . '</span></div>
+        ' . $determinacionesAdicionalesHtml . '
         <div class="line-label">Otras Determinaciones: <span class="line-value">' . $detalleDeterminaciones . '</span></div>
 
         <div class="si-no left">ESTE CERTIFICADO &nbsp;&nbsp; SI [' . $amparaSi . '] &nbsp;&nbsp; NO [' . $amparaNo . '] &nbsp;&nbsp; AMPARA LA TOTALIDAD DEL LOTE</div>

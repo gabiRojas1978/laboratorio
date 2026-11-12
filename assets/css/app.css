@@ -7,6 +7,39 @@
     --brand-border: #d7ddc8;
 }
 
+.agenda-semana {
+    display: grid;
+    grid-template-columns: repeat(7, minmax(135px, 1fr));
+    gap: 0.75rem;
+    overflow-x: auto;
+}
+
+.agenda-dia {
+    padding: 0.75rem;
+    border: 1px solid var(--brand-border);
+    border-radius: 12px;
+    background: var(--brand-surface);
+}
+
+.agenda-dia--hoy {
+    border: 2px solid var(--brand-green);
+}
+
+.agenda-conteo {
+    padding: 0.75rem;
+    margin-top: 0.75rem;
+    border: 1px solid var(--brand-border);
+    border-radius: 8px;
+    background: #ffffff;
+    overflow-wrap: anywhere;
+}
+
+.agenda-vencidos {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: 0.75rem;
+}
+
 * {
     box-sizing: border-box;
 }
@@ -138,6 +171,19 @@ body {
 .btn-brand:hover {
     color: #fff;
     opacity: 0.95;
+}
+
+.libro-ingreso-accion {
+    --bs-btn-active-color: #fff;
+    --bs-btn-active-bg: var(--brand-green-dark);
+    --bs-btn-active-border-color: var(--brand-green-dark);
+    --bs-btn-focus-shadow-rgb: 127, 149, 80;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 4.5rem;
+    min-height: 2rem;
+    font-weight: 600;
 }
 
 .btn-brand-outline,
@@ -272,6 +318,7 @@ body {
 
 .main-area {
     flex: 1;
+    min-width: 0;
     padding: 1.5rem;
 }
 
@@ -299,6 +346,7 @@ body {
 
 .content-area {
     display: grid;
+    grid-template-columns: minmax(0, 1fr);
     gap: 1.25rem;
 }
 

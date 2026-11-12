@@ -2,6 +2,16 @@
 
 declare(strict_types=1);
 
+$boletinGerminacionTipos = [
+    'boletin_germinacion' => ['tipo' => 'germinacion', 'titulo' => 'Germinación'],
+    'boletin_cold_test' => ['tipo' => 'cold_test', 'titulo' => 'Cold Test'],
+    'boletin_envejecimiento_acelerado' => ['tipo' => 'envejecimiento_acelerado', 'titulo' => 'Envejecimiento acelerado'],
+];
+$boletinGerminacionPagina = is_string($_GET['page'] ?? null) ? $_GET['page'] : 'boletin_germinacion';
+$boletinGerminacionContexto = $boletinGerminacionTipos[$boletinGerminacionPagina] ?? $boletinGerminacionTipos['boletin_germinacion'];
+$boletinGerminacionTipo = $boletinGerminacionContexto['tipo'];
+$boletinGerminacionTitulo = $boletinGerminacionContexto['titulo'];
+
 if (is_logged_in() && isset($_GET['boletin_germinacion_pdf'])) {
     $boletinId = filter_var($_GET['boletin_germinacion_pdf'], FILTER_VALIDATE_INT, ['options' => ['min_range' => 1]]);
     if ($boletinId === false) {
@@ -9,7 +19,14 @@ if (is_logged_in() && isset($_GET['boletin_germinacion_pdf'])) {
         exit('ID de boletín inválido.');
     }
 
-    $pdfResult = build_boletin_germinacion_pdf($boletinId);
+    $tipoBoletinPdf = $_GET['tipo_boletin'] ?? 'germinacion';
+    $tiposValidos = array_column($boletinGerminacionTipos, 'tipo');
+    if (!is_string($tipoBoletinPdf) || !in_array($tipoBoletinPdf, $tiposValidos, true)) {
+        http_response_code(400);
+        exit('Tipo de boletín inválido.');
+    }
+
+    $pdfResult = build_boletin_germinacion_pdf($boletinId, $tipoBoletinPdf);
     if ($pdfResult === null) {
         http_response_code(404);
         exit('Boletín no encontrado.');
@@ -130,6 +147,13 @@ function leer_repeticiones_boletin_germinacion(array $postedRepeticiones): array
 
 if (is_logged_in() && $_SERVER['REQUEST_METHOD'] === 'POST' && (isset($_POST['save_boletin_germinacion']) || isset($_POST['update_boletin_germinacion']))) {
     $esActualizacion = isset($_POST['update_boletin_germinacion']);
+    $ingresoAsociadoId = null;
+    if (isset($_POST['ingreso_id']) && $_POST['ingreso_id'] !== '') {
+        $ingresoAsociadoId = filter_var($_POST['ingreso_id'], FILTER_VALIDATE_INT, ['options' => ['min_range' => 1]]);
+        if ($ingresoAsociadoId === false) {
+            $errors[] = 'El ingreso asociado no es válido.';
+        }
+    }
 
     $boletinGerminacionEditId = null;
     if ($esActualizacion) {
@@ -246,8 +270,8 @@ if (is_logged_in() && $_SERVER['REQUEST_METHOD'] === 'POST' && (isset($_POST['sa
     }
 
     if ($esActualizacion && $boletinGerminacionEditId !== false && $boletinGerminacionEditId !== null) {
-        $existeStatement = db()->prepare('SELECT id_boletin_germinacion FROM boletines_germinacion WHERE id_boletin_germinacion = :id AND id_empresa = :id_empresa LIMIT 1');
-        $existeStatement->execute([':id' => $boletinGerminacionEditId, ':id_empresa' => current_empresa_id()]);
+        $existeStatement = db()->prepare('SELECT id_boletin_germinacion FROM boletines_germinacion WHERE id_boletin_germinacion = :id AND id_empresa = :id_empresa AND tipo_boletin = :tipo_boletin LIMIT 1');
+        $existeStatement->execute([':id' => $boletinGerminacionEditId, ':id_empresa' => current_empresa_id(), ':tipo_boletin' => $boletinGerminacionTipo]);
         if ($existeStatement->fetch() === false) {
             $errors[] = 'El boletín a editar no existe.';
         }
@@ -289,7 +313,7 @@ if (is_logged_in() && $_SERVER['REQUEST_METHOD'] === 'POST' && (isset($_POST['sa
                         resultado_semillas_muertas = :resultado_semillas_muertas,
                         estado = :estado,
                         observaciones = :observaciones
-                     WHERE id_boletin_germinacion = :id_boletin_germinacion AND id_empresa = :id_empresa'
+                     WHERE id_boletin_germinacion = :id_boletin_germinacion AND id_empresa = :id_empresa AND tipo_boletin = :tipo_boletin'
                 );
                 $update->execute([
                     ':id_cliente' => $clienteId,
@@ -322,6 +346,7 @@ if (is_logged_in() && $_SERVER['REQUEST_METHOD'] === 'POST' && (isset($_POST['sa
                     ':observaciones' => $boletinGerminacionForm['observaciones'] !== '' ? $boletinGerminacionForm['observaciones'] : null,
                     ':id_boletin_germinacion' => $boletinGerminacionEditId,
                     ':id_empresa' => current_empresa_id(),
+                    ':tipo_boletin' => $boletinGerminacionTipo,
                 ]);
                 $boletinId = $boletinGerminacionEditId;
 
@@ -329,11 +354,12 @@ if (is_logged_in() && $_SERVER['REQUEST_METHOD'] === 'POST' && (isset($_POST['sa
                 $deleteRepeticiones->execute([':id_boletin_germinacion' => $boletinId]);
             } else {
                 $insert = db()->prepare(
-                    'INSERT INTO boletines_germinacion (id_empresa, id_cliente, id_usuario, id_especie, analisis_nro, muestra_nro, fecha_siembra, fecha_primer_conteo, fecha_segundo_conteo, analista, pretratamiento_desde, pretratamiento_hasta, pretratamiento_total_dias, pretratamiento_aplica, pretratamiento_frio, pretratamiento_nitrato_k, pretratamiento_presecado, pretratamiento_prelavado, sustrato_tipo, sustrato_otro, temperatura_camara_tipo, temperatura_camara_otra, primer_promedio, resultado_plantulas_normales, resultado_plantulas_anormales, resultado_semillas_duras, resultado_semillas_frescas, resultado_semillas_muertas, estado, observaciones)
-                     VALUES (:id_empresa, :id_cliente, :id_usuario, :id_especie, :analisis_nro, :muestra_nro, :fecha_siembra, :fecha_primer_conteo, :fecha_segundo_conteo, :analista, :pretratamiento_desde, :pretratamiento_hasta, :pretratamiento_total_dias, :pretratamiento_aplica, :pretratamiento_frio, :pretratamiento_nitrato_k, :pretratamiento_presecado, :pretratamiento_prelavado, :sustrato_tipo, :sustrato_otro, :temperatura_camara_tipo, :temperatura_camara_otra, :primer_promedio, :resultado_plantulas_normales, :resultado_plantulas_anormales, :resultado_semillas_duras, :resultado_semillas_frescas, :resultado_semillas_muertas, :estado, :observaciones)'
+                    'INSERT INTO boletines_germinacion (id_empresa, tipo_boletin, id_cliente, id_usuario, id_especie, analisis_nro, muestra_nro, fecha_siembra, fecha_primer_conteo, fecha_segundo_conteo, analista, pretratamiento_desde, pretratamiento_hasta, pretratamiento_total_dias, pretratamiento_aplica, pretratamiento_frio, pretratamiento_nitrato_k, pretratamiento_presecado, pretratamiento_prelavado, sustrato_tipo, sustrato_otro, temperatura_camara_tipo, temperatura_camara_otra, primer_promedio, resultado_plantulas_normales, resultado_plantulas_anormales, resultado_semillas_duras, resultado_semillas_frescas, resultado_semillas_muertas, estado, observaciones)
+                     VALUES (:id_empresa, :tipo_boletin, :id_cliente, :id_usuario, :id_especie, :analisis_nro, :muestra_nro, :fecha_siembra, :fecha_primer_conteo, :fecha_segundo_conteo, :analista, :pretratamiento_desde, :pretratamiento_hasta, :pretratamiento_total_dias, :pretratamiento_aplica, :pretratamiento_frio, :pretratamiento_nitrato_k, :pretratamiento_presecado, :pretratamiento_prelavado, :sustrato_tipo, :sustrato_otro, :temperatura_camara_tipo, :temperatura_camara_otra, :primer_promedio, :resultado_plantulas_normales, :resultado_plantulas_anormales, :resultado_semillas_duras, :resultado_semillas_frescas, :resultado_semillas_muertas, :estado, :observaciones)'
                 );
                 $insert->execute([
                     ':id_empresa' => current_empresa_id(),
+                    ':tipo_boletin' => $boletinGerminacionTipo,
                     ':id_cliente' => $clienteId,
                     ':id_usuario' => $_SESSION['user']['id'] ?? null,
                     ':id_especie' => $especieId,
@@ -389,16 +415,20 @@ if (is_logged_in() && $_SERVER['REQUEST_METHOD'] === 'POST' && (isset($_POST['sa
                 ]);
             }
 
+            if ($ingresoAsociadoId !== null && $ingresoAsociadoId !== false) {
+                libro_ingreso_vincular_boletin((int) $ingresoAsociadoId, $boletinGerminacionPagina, (int) $boletinId);
+            }
+
             db()->commit();
 
-            $_SESSION['success_message'] = $esActualizacion ? 'Boletín de Germinación actualizado correctamente.' : 'Boletín de Germinación guardado correctamente.';
-            header('Location: /index.php?page=boletin_germinacion');
+            $_SESSION['success_message'] = 'Boletín de ' . $boletinGerminacionTitulo . ($esActualizacion ? ' actualizado correctamente.' : ' guardado correctamente.');
+            header('Location: /index.php?page=' . urlencode($boletinGerminacionPagina));
             exit;
         } catch (Throwable $throwable) {
             if (db()->inTransaction()) {
                 db()->rollBack();
             }
-            $errors[] = $esActualizacion ? 'No fue posible actualizar el boletín de Germinación.' : 'No fue posible guardar el boletín de Germinación.';
+            $errors[] = 'No fue posible ' . ($esActualizacion ? 'actualizar' : 'guardar') . ' el boletín de ' . $boletinGerminacionTitulo . '.';
         }
     } elseif (count($repeticionesData) !== 4 && !$huboErrorRepeticiones) {
         $errors[] = 'Completa las semillas sembradas en las cuatro repeticiones.';

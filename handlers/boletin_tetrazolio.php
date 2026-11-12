@@ -2,6 +2,8 @@
 
 declare(strict_types=1);
 
+require_once __DIR__ . '/../includes/boletin_edicion.php';
+
 if (is_logged_in() && isset($_GET['boletin_tetrazolio_pdf'])) {
     $boletinId = filter_var($_GET['boletin_tetrazolio_pdf'], FILTER_VALIDATE_INT, ['options' => ['min_range' => 1]]);
     if ($boletinId === false) {
@@ -26,6 +28,22 @@ if (is_logged_in() && isset($_GET['boletin_tetrazolio_pdf'])) {
 }
 
 if (is_logged_in() && $_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['save_boletin_tetrazolio'])) {
+    $ingresoAsociadoId = null;
+    if (isset($_POST['ingreso_id']) && $_POST['ingreso_id'] !== '') {
+        $ingresoAsociadoId = filter_var($_POST['ingreso_id'], FILTER_VALIDATE_INT, ['options' => ['min_range' => 1]]);
+        if ($ingresoAsociadoId === false) {
+            $errors[] = 'El ingreso asociado no es válido.';
+        }
+    }
+    $boletinTetrazolioEditId = null;
+    try {
+        $boletinTetrazolioEditId = boletin_edicion_id();
+        if ($boletinTetrazolioEditId !== null) {
+            boletin_edicion_cabecera('tetrazolio', $boletinTetrazolioEditId);
+        }
+    } catch (Throwable $throwable) {
+        $errors[] = 'El boletín a editar no es válido o no pertenece a la empresa activa.';
+    }
     $boletinTetrazolioForm['id_cliente'] = trim((string) ($_POST['id_cliente'] ?? ''));
     $boletinTetrazolioForm['id_especie'] = trim((string) ($_POST['id_especie'] ?? ''));
     $boletinTetrazolioForm['muestra_nro'] = trim((string) ($_POST['muestra_nro'] ?? ''));
@@ -83,11 +101,13 @@ if (is_logged_in() && $_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['sav
     if ($especieId === false) {
         $errors[] = 'Debes seleccionar una especie válida.';
     } else {
-        $especieStatement = db()->prepare('SELECT cientifico_especie FROM especies WHERE id_especie = :id AND id_empresa = :id_empresa LIMIT 1');
+        $especieStatement = db()->prepare('SELECT nombre_especie, cientifico_especie FROM especies WHERE id_especie = :id AND id_empresa = :id_empresa LIMIT 1');
         $especieStatement->execute([':id' => $especieId, ':id_empresa' => current_empresa_id()]);
         $especieRow = $especieStatement->fetch();
         if ($especieRow === false) {
             $errors[] = 'La especie seleccionada no existe.';
+        } elseif (boletin_tetrazolio_soja_especie_valida((string) $especieRow['nombre_especie'], $especieRow['cientifico_especie'] ?? null)) {
+            $errors[] = 'El boletín general de Tetrazolio es para especies distintas de soja; utiliza Tetrazolio (Soja).';
         } elseif (trim((string) ($especieRow['cientifico_especie'] ?? '')) === '') {
             $errors[] = 'La especie seleccionada no tiene nombre científico en el catálogo.';
         }
@@ -119,7 +139,7 @@ if (is_logged_in() && $_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['sav
                 'INSERT INTO boletines_tetrazolio (id_empresa, id_cliente, id_usuario, id_especie, muestra_nro, fecha_inicio, fecha_finalizacion, analista, tiempo_humedecimiento, tiempo_tincion, temperatura_tincion, concentracion_tz, promedio_viables, promedio_no_viables, resultado_porcentaje, resultado_no_viables_porcentaje, observaciones)
                  VALUES (:id_empresa, :id_cliente, :id_usuario, :id_especie, :muestra_nro, :fecha_inicio, :fecha_finalizacion, :analista, :tiempo_humedecimiento, :tiempo_tincion, :temperatura_tincion, :concentracion_tz, :promedio_viables, :promedio_no_viables, :resultado_porcentaje, :resultado_no_viables_porcentaje, :observaciones)'
             );
-            $insert->execute([
+            $parametrosCabecera = [
                 ':id_empresa' => current_empresa_id(),
                 ':id_cliente' => $clienteId,
                 ':id_usuario' => $_SESSION['user']['id'] ?? null,
@@ -137,8 +157,14 @@ if (is_logged_in() && $_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['sav
                 ':resultado_porcentaje' => $calculos['resultado_viables_porcentaje'],
                 ':resultado_no_viables_porcentaje' => $calculos['resultado_no_viables_porcentaje'],
                 ':observaciones' => $boletinTetrazolioForm['observaciones'] !== '' ? $boletinTetrazolioForm['observaciones'] : null,
-            ]);
-            $boletinId = (int) db()->lastInsertId();
+            ];
+            if ($boletinTetrazolioEditId !== null) {
+                boletin_edicion_actualizar('tetrazolio', $boletinTetrazolioEditId, $parametrosCabecera);
+                $boletinId = $boletinTetrazolioEditId;
+            } else {
+                $insert->execute($parametrosCabecera);
+                $boletinId = (int) db()->lastInsertId();
+            }
 
             $insertRepeticion = db()->prepare(
                 'INSERT INTO boletin_tetrazolio_repeticiones (id_boletin_tetrazolio, nro_repeticion, semillas_viables, semillas_no_viables)
@@ -151,6 +177,9 @@ if (is_logged_in() && $_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['sav
                     ':semillas_viables' => $repeticion['viables'],
                     ':semillas_no_viables' => $repeticion['no_viables'],
                 ]);
+            }
+            if ($ingresoAsociadoId !== null && $ingresoAsociadoId !== false) {
+                libro_ingreso_vincular_boletin((int) $ingresoAsociadoId, 'boletin_tetrazolio', $boletinId);
             }
             db()->commit();
 

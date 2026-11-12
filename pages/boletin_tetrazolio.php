@@ -2,6 +2,9 @@
 
 declare(strict_types=1);
 
+require_once __DIR__ . '/../includes/boletin_edicion.php';
+[$boletinEditId, $boletinEdicionInvalida] = boletin_edicion_cargar('tetrazolio', $boletinTetrazolioForm, $errors);
+
 $clientesOptions = [];
 $especiesOptions = [];
 $boletinesTetrazolio = [];
@@ -17,7 +20,13 @@ try {
 try {
     $statement = db()->prepare('SELECT id_especie, nombre_especie, cientifico_especie FROM especies WHERE id_empresa = :id_empresa ORDER BY nombre_especie ASC');
     $statement->execute([':id_empresa' => current_empresa_id()]);
-    $especiesOptions = $statement->fetchAll();
+    $especiesOptions = array_values(array_filter(
+        $statement->fetchAll(),
+        static fn(array $especie): bool => !boletin_tetrazolio_soja_especie_valida(
+            (string) $especie['nombre_especie'],
+            $especie['cientifico_especie'] ?? null
+        )
+    ));
 } catch (Throwable $throwable) {
     $errors[] = 'No se pudo cargar el selector de especies.';
 }
@@ -48,6 +57,9 @@ try {
 ?>
 <section class="section-panel">
     <h2>Boletín de Tetrazolio</h2>
+    <?php if ($boletinEditId !== null): ?>
+        <p>Editando boletín #<?php echo $boletinEditId; ?>. <a href="/index.php?page=boletin_tetrazolio">Cancelar edición</a></p>
+    <?php endif; ?>
 
     <?php foreach ($errors as $error): ?>
         <div class="alert alert-danger"><?php echo htmlspecialchars($error, ENT_QUOTES, 'UTF-8'); ?></div>
@@ -55,9 +67,17 @@ try {
     <?php if ($successMessage !== null): ?>
         <div class="alert alert-success"><?php echo htmlspecialchars($successMessage, ENT_QUOTES, 'UTF-8'); ?></div>
     <?php endif; ?>
-
-    <form method="post" class="row g-3 mt-1">
+    <?php if ($especiesOptions === []): ?>
+        <div class="alert alert-warning">Este boletín corresponde a especies distintas de soja. Registra una especie compatible para continuar.</div>
+    <?php else: ?>
+        <form method="post" class="row g-3 mt-1" id="boletin-form">
         <input type="hidden" name="save_boletin_tetrazolio" value="1">
+        <?php if (isset($_GET['ingreso_id']) && filter_var($_GET['ingreso_id'], FILTER_VALIDATE_INT, ['options' => ['min_range' => 1]]) !== false): ?>
+            <input type="hidden" name="ingreso_id" value="<?php echo (int) $_GET['ingreso_id']; ?>">
+        <?php endif; ?>
+        <?php if ($boletinEditId !== null): ?>
+            <input type="hidden" name="id_boletin" value="<?php echo $boletinEditId; ?>">
+        <?php endif; ?>
         <div class="col-md-4">
             <label for="tet_cliente" class="form-label">Cliente *</label>
             <select class="form-select" id="tet_cliente" name="id_cliente" required>
@@ -145,8 +165,9 @@ try {
             <label for="tet_observaciones" class="form-label">Observaciones</label>
             <textarea class="form-control" id="tet_observaciones" name="observaciones" rows="4"><?php echo htmlspecialchars($boletinTetrazolioForm['observaciones'], ENT_QUOTES, 'UTF-8'); ?></textarea>
         </div>
-        <div class="col-12"><button type="submit" class="btn btn-brand">Guardar boletín</button></div>
+        <div class="col-12"><button type="submit" class="btn btn-brand" <?php echo $boletinEdicionInvalida ? 'disabled' : ''; ?>><?php echo $boletinEditId !== null ? 'Actualizar boletín' : 'Guardar boletín'; ?></button></div>
     </form>
+    <?php endif; ?>
 </section>
 
 <section class="section-panel" id="tetrazolio-listado">
@@ -198,7 +219,7 @@ try {
                             <td><?php echo htmlspecialchars((string) ($boletin['analista'] ?? ''), ENT_QUOTES, 'UTF-8'); ?></td>
                             <td><?php echo htmlspecialchars(number_format((float) $boletin['resultado_porcentaje'], 2, ',', '.') . ' %', ENT_QUOTES, 'UTF-8'); ?></td>
                             <td><?php echo htmlspecialchars(number_format((float) $boletin['resultado_no_viables_porcentaje'], 2, ',', '.') . ' %', ENT_QUOTES, 'UTF-8'); ?></td>
-                            <td><a class="btn btn-sm btn-outline-light" href="/index.php?boletin_tetrazolio_pdf=<?php echo urlencode((string) $boletin['id_boletin_tetrazolio']); ?>" target="_blank" rel="noopener noreferrer" aria-label="Abrir PDF de la muestra <?php echo htmlspecialchars((string) $boletin['muestra_nro'], ENT_QUOTES, 'UTF-8'); ?>"><i class="bi bi-file-earmark-pdf"></i> PDF</a></td>
+                            <td><a class="btn btn-sm btn-outline-light" href="/index.php?page=boletin_tetrazolio&amp;editar=<?php echo (int) $boletin['id_boletin_tetrazolio']; ?>#boletin-form">Editar</a> <a class="btn btn-sm btn-outline-light" href="/index.php?boletin_tetrazolio_pdf=<?php echo urlencode((string) $boletin['id_boletin_tetrazolio']); ?>" target="_blank" rel="noopener noreferrer" aria-label="Abrir PDF de la muestra <?php echo htmlspecialchars((string) $boletin['muestra_nro'], ENT_QUOTES, 'UTF-8'); ?>"><i class="bi bi-file-earmark-pdf"></i> PDF</a></td>
                         </tr>
                     <?php endforeach; ?>
                 <?php endif; ?>

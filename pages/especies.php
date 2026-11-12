@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 $especies = [];
 try {
-    $especiesStatement = db()->prepare('SELECT id_especie, nombre_especie, cientifico_especie, created_at_especie FROM especies WHERE id_empresa = :id_empresa ORDER BY id_especie DESC');
+    $especiesStatement = db()->prepare('SELECT id_especie, nombre_especie, cientifico_especie, primer_conteo, conteo_final, created_at_especie FROM especies WHERE id_empresa = :id_empresa ORDER BY id_especie DESC');
     $especiesStatement->execute([':id_empresa' => current_empresa_id()]);
     $especies = $especiesStatement->fetchAll();
 } catch (Throwable $throwable) {
@@ -15,13 +15,15 @@ if (isset($_GET['edit']) && $speciesEditId === null) {
     $editId = filter_var($_GET['edit'], FILTER_VALIDATE_INT, ['options' => ['min_range' => 1]]);
     if ($editId !== false) {
         try {
-            $editStatement = db()->prepare('SELECT id_especie, nombre_especie, cientifico_especie FROM especies WHERE id_especie = :id AND id_empresa = :id_empresa LIMIT 1');
+            $editStatement = db()->prepare('SELECT id_especie, nombre_especie, cientifico_especie, primer_conteo, conteo_final FROM especies WHERE id_especie = :id AND id_empresa = :id_empresa LIMIT 1');
             $editStatement->execute([':id' => $editId, ':id_empresa' => current_empresa_id()]);
             $editRow = $editStatement->fetch();
             if ($editRow !== false) {
                 $speciesEditId = (int) $editRow['id_especie'];
                 $speciesForm['nombre_especie'] = (string) ($editRow['nombre_especie'] ?? '');
                 $speciesForm['cientifico_especie'] = (string) ($editRow['cientifico_especie'] ?? '');
+                $speciesForm['primer_conteo'] = (string) ($editRow['primer_conteo'] ?? '');
+                $speciesForm['conteo_final'] = (string) ($editRow['conteo_final'] ?? '');
             }
         } catch (Throwable $throwable) {
             $errors[] = 'No se pudo cargar la especie para edición.';
@@ -64,6 +66,16 @@ if (isset($_GET['edit']) && $speciesEditId === null) {
             <input type="text" class="form-control" id="cientifico_especie" name="cientifico_especie" maxlength="255" value="<?php echo htmlspecialchars($speciesForm['cientifico_especie'], ENT_QUOTES, 'UTF-8'); ?>">
         </div>
 
+        <div class="col-md-6">
+            <label for="primer_conteo" class="form-label">Primer conteo (días)</label>
+            <input type="number" class="form-control" id="primer_conteo" name="primer_conteo" min="1" max="65535" step="1" value="<?php echo htmlspecialchars($speciesForm['primer_conteo'], ENT_QUOTES, 'UTF-8'); ?>">
+        </div>
+
+        <div class="col-md-6">
+            <label for="conteo_final" class="form-label">Conteo final (días)</label>
+            <input type="number" class="form-control" id="conteo_final" name="conteo_final" min="1" max="65535" step="1" value="<?php echo htmlspecialchars($speciesForm['conteo_final'], ENT_QUOTES, 'UTF-8'); ?>">
+        </div>
+
         <div class="col-12 d-flex gap-2">
             <button type="submit" class="btn btn-brand"><?php echo $speciesEditId !== null ? 'Actualizar especie' : 'Guardar especie'; ?></button>
             <a href="/index.php?page=especies" class="btn btn-outline-brand">Cancelar</a>
@@ -82,6 +94,8 @@ if (isset($_GET['edit']) && $speciesEditId === null) {
                     <th>ID</th>
                     <th>Nombre</th>
                     <th>Nombre cientifico</th>
+                    <th>Primer conteo (días)</th>
+                    <th>Conteo final (días)</th>
                     <th>Alta</th>
                     <th>Acciones</th>
                 </tr>
@@ -89,7 +103,7 @@ if (isset($_GET['edit']) && $speciesEditId === null) {
             <tbody>
                 <?php if ($especies === []): ?>
                     <tr>
-                        <td colspan="5" class="text-center text-muted">No hay especies cargadas aún.</td>
+                        <td colspan="7" class="text-center text-muted">No hay especies cargadas aún.</td>
                     </tr>
                 <?php else: ?>
                     <?php foreach ($especies as $especie): ?>
@@ -97,6 +111,8 @@ if (isset($_GET['edit']) && $speciesEditId === null) {
                             <td><?php echo htmlspecialchars((string) $especie['id_especie'], ENT_QUOTES, 'UTF-8'); ?></td>
                             <td><?php echo htmlspecialchars((string) $especie['nombre_especie'], ENT_QUOTES, 'UTF-8'); ?></td>
                             <td><?php echo htmlspecialchars((string) ($especie['cientifico_especie'] ?? ''), ENT_QUOTES, 'UTF-8'); ?></td>
+                            <td><?php echo htmlspecialchars((string) ($especie['primer_conteo'] ?? ''), ENT_QUOTES, 'UTF-8'); ?></td>
+                            <td><?php echo htmlspecialchars((string) ($especie['conteo_final'] ?? ''), ENT_QUOTES, 'UTF-8'); ?></td>
                             <td><?php echo htmlspecialchars((string) ($especie['created_at_especie'] ?? ''), ENT_QUOTES, 'UTF-8'); ?></td>
                             <td class="text-nowrap">
                                 <a href="/index.php?page=especies&edit=<?php echo urlencode((string) $especie['id_especie']); ?>" class="btn btn-sm btn-outline-light"><i class="bi bi-pencil"></i> Editar</a>

@@ -2,6 +2,9 @@
 
 declare(strict_types=1);
 
+require_once __DIR__ . '/../includes/boletin_edicion.php';
+[$boletinEditId, $boletinEdicionInvalida] = boletin_edicion_cargar('pureza', $boletinPurezaForm, $errors);
+
 $clientesOptions = [];
 $especiesOptions = [];
 $determinacionesOptions = [];
@@ -60,6 +63,9 @@ $decimalesForm = $pesoInicialForm > 0 ? decimales_boletin_pureza($pesoInicialFor
 ?>
 <section class="section-panel">
     <h2>Boletín de Pureza física-botánica</h2>
+    <?php if ($boletinEditId !== null): ?>
+        <p>Editando boletín #<?php echo $boletinEditId; ?>. <a href="/index.php?page=boletin_pureza">Cancelar edición</a></p>
+    <?php endif; ?>
 
     <?php foreach ($errors as $error): ?>
         <div class="alert alert-danger"><?php echo htmlspecialchars($error, ENT_QUOTES, 'UTF-8'); ?></div>
@@ -68,8 +74,14 @@ $decimalesForm = $pesoInicialForm > 0 ? decimales_boletin_pureza($pesoInicialFor
         <div class="alert alert-success"><?php echo htmlspecialchars($successMessage, ENT_QUOTES, 'UTF-8'); ?></div>
     <?php endif; ?>
 
-    <form method="post" class="row g-3 mt-1">
+    <form method="post" class="row g-3 mt-1" id="boletin-form">
         <input type="hidden" name="save_boletin_pureza" value="1">
+        <?php if (isset($_GET['ingreso_id']) && filter_var($_GET['ingreso_id'], FILTER_VALIDATE_INT, ['options' => ['min_range' => 1]]) !== false): ?>
+            <input type="hidden" name="ingreso_id" value="<?php echo (int) $_GET['ingreso_id']; ?>">
+        <?php endif; ?>
+        <?php if ($boletinEditId !== null): ?>
+            <input type="hidden" name="id_boletin" value="<?php echo $boletinEditId; ?>">
+        <?php endif; ?>
         <div class="col-md-4">
             <label for="pureza_cliente" class="form-label">Cliente *</label>
             <select class="form-select" id="pureza_cliente" name="id_cliente" required>
@@ -160,7 +172,7 @@ $decimalesForm = $pesoInicialForm > 0 ? decimales_boletin_pureza($pesoInicialFor
             <label for="pureza_observaciones" class="form-label">Observaciones</label>
             <textarea class="form-control" id="pureza_observaciones" name="observaciones" rows="3"><?php echo htmlspecialchars($boletinPurezaForm['observaciones'], ENT_QUOTES, 'UTF-8'); ?></textarea>
         </div>
-        <div class="col-12"><button type="submit" class="btn btn-brand">Guardar boletín</button></div>
+        <div class="col-12"><button type="submit" class="btn btn-brand" <?php echo $boletinEdicionInvalida ? 'disabled' : ''; ?>><?php echo $boletinEditId !== null ? 'Actualizar boletín' : 'Guardar boletín'; ?></button></div>
     </form>
 </section>
 
@@ -213,7 +225,7 @@ $decimalesForm = $pesoInicialForm > 0 ? decimales_boletin_pureza($pesoInicialFor
                             <td><?php echo htmlspecialchars(number_format((float) $boletin['porcentaje_semilla_pura'], 2, ',', '.') . ' %', ENT_QUOTES, 'UTF-8'); ?></td>
                             <td><?php echo htmlspecialchars(number_format((float) $boletin['porcentaje_materia_inerte'], 2, ',', '.') . ' %', ENT_QUOTES, 'UTF-8'); ?></td>
                             <td><?php echo htmlspecialchars(number_format((float) $boletin['porcentaje_otras_semillas'], 2, ',', '.') . ' %', ENT_QUOTES, 'UTF-8'); ?></td>
-                            <td><a class="btn btn-sm btn-outline-light" href="/index.php?boletin_pureza_pdf=<?php echo urlencode((string) $boletin['id_boletin_pureza']); ?>" target="_blank" rel="noopener noreferrer" aria-label="Abrir PDF del análisis <?php echo htmlspecialchars((string) $boletin['analisis_nro'], ENT_QUOTES, 'UTF-8'); ?>"><i class="bi bi-file-earmark-pdf"></i> PDF</a></td>
+                            <td><a class="btn btn-sm btn-outline-light" href="/index.php?page=boletin_pureza&amp;editar=<?php echo (int) $boletin['id_boletin_pureza']; ?>#boletin-form">Editar</a> <a class="btn btn-sm btn-outline-light" href="/index.php?boletin_pureza_pdf=<?php echo urlencode((string) $boletin['id_boletin_pureza']); ?>" target="_blank" rel="noopener noreferrer" aria-label="Abrir PDF del análisis <?php echo htmlspecialchars((string) $boletin['analisis_nro'], ENT_QUOTES, 'UTF-8'); ?>"><i class="bi bi-file-earmark-pdf"></i> PDF</a></td>
                         </tr>
                     <?php endforeach; ?>
                 <?php endif; ?>

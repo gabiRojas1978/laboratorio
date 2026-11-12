@@ -2,6 +2,8 @@
 
 declare(strict_types=1);
 
+require_once __DIR__ . '/../includes/boletin_edicion.php';
+
 if (is_logged_in() && isset($_GET['boletin_pureza_pdf'])) {
     $boletinId = filter_var($_GET['boletin_pureza_pdf'], FILTER_VALIDATE_INT, ['options' => ['min_range' => 1]]);
     if ($boletinId === false) {
@@ -26,6 +28,22 @@ if (is_logged_in() && isset($_GET['boletin_pureza_pdf'])) {
 }
 
 if (is_logged_in() && $_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['save_boletin_pureza'])) {
+    $ingresoAsociadoId = null;
+    if (isset($_POST['ingreso_id']) && $_POST['ingreso_id'] !== '') {
+        $ingresoAsociadoId = filter_var($_POST['ingreso_id'], FILTER_VALIDATE_INT, ['options' => ['min_range' => 1]]);
+        if ($ingresoAsociadoId === false) {
+            $errors[] = 'El ingreso asociado no es válido.';
+        }
+    }
+    $boletinPurezaEditId = null;
+    try {
+        $boletinPurezaEditId = boletin_edicion_id();
+        if ($boletinPurezaEditId !== null) {
+            boletin_edicion_cabecera('pureza', $boletinPurezaEditId);
+        }
+    } catch (Throwable $throwable) {
+        $errors[] = 'El boletín a editar no es válido o no pertenece a la empresa activa.';
+    }
     $boletinPurezaForm['id_cliente'] = trim((string) ($_POST['id_cliente'] ?? ''));
     $boletinPurezaForm['id_especie'] = trim((string) ($_POST['id_especie'] ?? ''));
     $boletinPurezaForm['analisis_nro'] = trim((string) ($_POST['analisis_nro'] ?? ''));
@@ -153,7 +171,7 @@ if (is_logged_in() && $_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['sav
                 'INSERT INTO boletines_pureza (id_empresa, id_cliente, id_usuario, id_especie, analisis_nro, fecha_analisis, analista, peso_inicial, peso_semilla_pura, peso_materia_inerte, peso_otras_semillas, peso_total, diferencia_peso, porcentaje_semilla_pura, porcentaje_materia_inerte, porcentaje_otras_semillas, observaciones, otras_determinaciones_texto)
                  VALUES (:id_empresa, :id_cliente, :id_usuario, :id_especie, :analisis_nro, :fecha_analisis, :analista, :peso_inicial, :peso_semilla_pura, :peso_materia_inerte, :peso_otras_semillas, :peso_total, :diferencia_peso, :porcentaje_semilla_pura, :porcentaje_materia_inerte, :porcentaje_otras_semillas, :observaciones, :otras_determinaciones_texto)'
             );
-            $insert->execute([
+            $parametrosCabecera = [
                 ':id_empresa' => current_empresa_id(),
                 ':id_cliente' => $clienteId,
                 ':id_usuario' => $_SESSION['user']['id'] ?? null,
@@ -172,8 +190,14 @@ if (is_logged_in() && $_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['sav
                 ':porcentaje_otras_semillas' => round($calculos['porcentaje_otras_semillas'], 4),
                 ':observaciones' => $boletinPurezaForm['observaciones'] !== '' ? $boletinPurezaForm['observaciones'] : null,
                 ':otras_determinaciones_texto' => $boletinPurezaForm['otras_determinaciones_texto'] !== '' ? $boletinPurezaForm['otras_determinaciones_texto'] : null,
-            ]);
-            $boletinId = (int) db()->lastInsertId();
+            ];
+            if ($boletinPurezaEditId !== null) {
+                boletin_edicion_actualizar('pureza', $boletinPurezaEditId, $parametrosCabecera);
+                $boletinId = $boletinPurezaEditId;
+            } else {
+                $insert->execute($parametrosCabecera);
+                $boletinId = (int) db()->lastInsertId();
+            }
 
             $insertComponent = db()->prepare(
                 'INSERT INTO boletin_pureza_componentes (id_boletin_pureza, tipo_componente, nombre_componente, peso_gramos)
@@ -205,6 +229,9 @@ if (is_logged_in() && $_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['sav
                         ':id_determinacion' => $determinacionId,
                     ]);
                 }
+            }
+            if ($ingresoAsociadoId !== null && $ingresoAsociadoId !== false) {
+                libro_ingreso_vincular_boletin((int) $ingresoAsociadoId, 'boletin_pureza', $boletinId);
             }
             db()->commit();
 

@@ -26,8 +26,8 @@ if (isset($_GET['editar']) && $boletinGerminacionEditId === null) {
     $editId = filter_var($_GET['editar'], FILTER_VALIDATE_INT, ['options' => ['min_range' => 1]]);
     if ($editId !== false) {
         try {
-            $editStatement = db()->prepare('SELECT * FROM boletines_germinacion WHERE id_boletin_germinacion = :id AND id_empresa = :id_empresa LIMIT 1');
-            $editStatement->execute([':id' => $editId, ':id_empresa' => current_empresa_id()]);
+            $editStatement = db()->prepare('SELECT * FROM boletines_germinacion WHERE id_boletin_germinacion = :id AND id_empresa = :id_empresa AND tipo_boletin = :tipo_boletin LIMIT 1');
+            $editStatement->execute([':id' => $editId, ':id_empresa' => current_empresa_id(), ':tipo_boletin' => $boletinGerminacionTipo]);
             $editRow = $editStatement->fetch();
             if ($editRow !== false) {
                 $boletinGerminacionEditId = (int) $editRow['id_boletin_germinacion'];
@@ -85,11 +85,25 @@ if (isset($_GET['editar']) && $boletinGerminacionEditId === null) {
 
 $filtroCliente = trim((string) ($_GET['filtro_cliente'] ?? ''));
 $filtroClienteId = filter_var($filtroCliente, FILTER_VALIDATE_INT, ['options' => ['min_range' => 1]]);
+$filtroEspecie = trim((string) ($_GET['filtro_especie'] ?? ''));
+$filtroEspecieId = filter_var($filtroEspecie, FILTER_VALIDATE_INT, ['options' => ['min_range' => 1]]);
+$filtroEstado = trim((string) ($_GET['filtro_estado'] ?? ''));
+if (!in_array($filtroEstado, ['primer_conteo', 'finalizado'], true)) {
+    $filtroEstado = '';
+}
 $conditions = ['b.id_empresa = :id_empresa'];
 $params = [':id_empresa' => current_empresa_id()];
 if ($filtroClienteId !== false) {
     $conditions[] = 'b.id_cliente = :id_cliente';
     $params[':id_cliente'] = $filtroClienteId;
+}
+if ($filtroEspecieId !== false) {
+    $conditions[] = 'b.id_especie = :id_especie_filtro';
+    $params[':id_especie_filtro'] = $filtroEspecieId;
+}
+if ($filtroEstado !== '') {
+    $conditions[] = 'b.estado = :estado_filtro';
+    $params[':estado_filtro'] = $filtroEstado;
 }
 
 try {
@@ -98,21 +112,22 @@ try {
          FROM boletines_germinacion b
          INNER JOIN clientes cl ON cl.id_cliente = b.id_cliente AND cl.id_empresa = b.id_empresa
          LEFT JOIN especies e ON e.id_especie = b.id_especie AND e.id_empresa = b.id_empresa
-         WHERE ' . implode(' AND ', $conditions) . '
+         WHERE ' . implode(' AND ', $conditions) . ' AND b.tipo_boletin = :tipo_boletin
          ORDER BY b.id_boletin_germinacion DESC'
     );
+    $params[':tipo_boletin'] = $boletinGerminacionTipo;
     $statement->execute($params);
     $boletinesGerminacion = $statement->fetchAll();
 } catch (Throwable $throwable) {
-    $errors[] = 'No se pudo cargar el listado de boletines de Germinación.';
+    $errors[] = 'No se pudo cargar el listado de boletines de ' . $boletinGerminacionTitulo . '.';
 }
 ?>
 <section class="section-panel" id="germinacion-form">
     <?php if ($boletinGerminacionEditId !== null): ?>
-        <h2>Editar boletín de Germinación <span class="badge bg-secondary fs-6">#<?php echo $boletinGerminacionEditId; ?></span></h2>
+        <h2>Editar boletín de <?php echo htmlspecialchars($boletinGerminacionTitulo, ENT_QUOTES, 'UTF-8'); ?> <span class="badge bg-secondary fs-6">#<?php echo $boletinGerminacionEditId; ?></span></h2>
         <p>Actualiza el 1er conteo o completa el 2do conteo para cerrar el resultado final.</p>
     <?php else: ?>
-        <h2>Boletín de Germinación</h2>
+        <h2>Boletín de <?php echo htmlspecialchars($boletinGerminacionTitulo, ENT_QUOTES, 'UTF-8'); ?></h2>
         <p>Carga el 1er conteo (indicador temprano) y, cuando esté disponible, el 2do conteo final por repetición.</p>
     <?php endif; ?>
 
@@ -123,7 +138,10 @@ try {
         <div class="alert alert-success"><?php echo htmlspecialchars($successMessage, ENT_QUOTES, 'UTF-8'); ?></div>
     <?php endif; ?>
 
-    <form method="post" class="row g-3 mt-1">
+    <form method="post" action="/index.php?page=<?php echo htmlspecialchars($boletinGerminacionPagina, ENT_QUOTES, 'UTF-8'); ?>" id="boletin-form" class="row g-3 mt-1">
+        <?php if (isset($_GET['ingreso_id']) && filter_var($_GET['ingreso_id'], FILTER_VALIDATE_INT, ['options' => ['min_range' => 1]]) !== false): ?>
+            <input type="hidden" name="ingreso_id" value="<?php echo (int) $_GET['ingreso_id']; ?>">
+        <?php endif; ?>
         <?php if ($boletinGerminacionEditId !== null): ?>
             <input type="hidden" name="update_boletin_germinacion" value="1">
             <input type="hidden" name="boletin_germinacion_edit_id" value="<?php echo $boletinGerminacionEditId; ?>">
@@ -317,17 +335,17 @@ try {
         <div class="col-12 d-flex gap-2">
             <button type="submit" class="btn btn-brand"><?php echo $boletinGerminacionEditId !== null ? 'Guardar cambios' : 'Guardar boletín'; ?></button>
             <?php if ($boletinGerminacionEditId !== null): ?>
-                <a href="/index.php?page=boletin_germinacion#germinacion-listado" class="btn btn-outline-brand">Cancelar edición</a>
+                <a href="/index.php?page=<?php echo htmlspecialchars($boletinGerminacionPagina, ENT_QUOTES, 'UTF-8'); ?>#germinacion-listado" class="btn btn-outline-brand">Cancelar edición</a>
             <?php endif; ?>
         </div>
     </form>
 </section>
 
 <section class="section-panel" id="germinacion-listado">
-    <h2>Boletines cargados</h2>
+    <h2>Boletines de <?php echo htmlspecialchars($boletinGerminacionTitulo, ENT_QUOTES, 'UTF-8'); ?> cargados</h2>
     <form method="get" class="row g-3 mb-3" action="/index.php#germinacion-listado">
-        <input type="hidden" name="page" value="boletin_germinacion">
-        <div class="col-md-4">
+        <input type="hidden" name="page" value="<?php echo htmlspecialchars($boletinGerminacionPagina, ENT_QUOTES, 'UTF-8'); ?>">
+        <div class="col-md-3">
             <label for="germ-filtro-cliente" class="form-label">Filtrar por cliente</label>
             <select class="form-select" id="germ-filtro-cliente" name="filtro_cliente">
                 <option value="">Todos</option>
@@ -336,9 +354,26 @@ try {
                 <?php endforeach; ?>
             </select>
         </div>
+        <div class="col-md-3">
+            <label for="germ-filtro-especie" class="form-label">Filtrar por especie</label>
+            <select class="form-select" id="germ-filtro-especie" name="filtro_especie">
+                <option value="">Todas</option>
+                <?php foreach ($especiesOptions as $especie): ?>
+                    <option value="<?php echo (int) $especie['id_especie']; ?>" <?php echo $filtroEspecie === (string) $especie['id_especie'] ? 'selected' : ''; ?>><?php echo htmlspecialchars((string) $especie['nombre_especie'], ENT_QUOTES, 'UTF-8'); ?></option>
+                <?php endforeach; ?>
+            </select>
+        </div>
+        <div class="col-md-3">
+            <label for="germ-filtro-estado" class="form-label">Filtrar por estado</label>
+            <select class="form-select" id="germ-filtro-estado" name="filtro_estado">
+                <option value="">Todos</option>
+                <option value="primer_conteo" <?php echo $filtroEstado === 'primer_conteo' ? 'selected' : ''; ?>>En proceso</option>
+                <option value="finalizado" <?php echo $filtroEstado === 'finalizado' ? 'selected' : ''; ?>>Finalizado</option>
+            </select>
+        </div>
         <div class="col-md-2 d-flex align-items-end gap-2">
             <button type="submit" class="btn btn-brand w-100"><i class="bi bi-funnel"></i> Filtrar</button>
-            <a href="/index.php?page=boletin_germinacion#germinacion-listado" class="btn btn-outline-brand" title="Limpiar filtro"><i class="bi bi-x-circle"></i></a>
+            <a href="/index.php?page=<?php echo htmlspecialchars($boletinGerminacionPagina, ENT_QUOTES, 'UTF-8'); ?>#germinacion-listado" class="btn btn-outline-brand" title="Limpiar filtro"><i class="bi bi-x-circle"></i></a>
         </div>
     </form>
     <div class="table-responsive">
@@ -373,8 +408,8 @@ try {
                             <td><?php echo $boletin['resultado_plantulas_normales'] !== null ? htmlspecialchars(number_format((float) $boletin['resultado_plantulas_normales'], 2, ',', '.') . ' %', ENT_QUOTES, 'UTF-8') : '----------------'; ?></td>
                             <td><?php echo $boletin['estado'] === 'finalizado' ? '<span class="badge bg-success">Finalizado</span>' : '<span class="badge bg-warning text-dark">En proceso</span>'; ?></td>
                             <td class="d-flex gap-2">
-                                <a class="btn btn-sm btn-outline-light" href="/index.php?page=boletin_germinacion&editar=<?php echo urlencode((string) $boletin['id_boletin_germinacion']); ?>#germinacion-form" aria-label="Editar boletín <?php echo htmlspecialchars((string) $boletin['muestra_nro'], ENT_QUOTES, 'UTF-8'); ?>"><i class="bi bi-pencil"></i> Editar</a>
-                                <a class="btn btn-sm btn-outline-light" href="/index.php?boletin_germinacion_pdf=<?php echo urlencode((string) $boletin['id_boletin_germinacion']); ?>" target="_blank" rel="noopener noreferrer" aria-label="Abrir PDF del boletín <?php echo htmlspecialchars((string) $boletin['muestra_nro'], ENT_QUOTES, 'UTF-8'); ?>"><i class="bi bi-file-earmark-pdf"></i> PDF</a>
+                                <a class="btn btn-sm btn-outline-light" href="/index.php?page=<?php echo urlencode($boletinGerminacionPagina); ?>&amp;editar=<?php echo urlencode((string) $boletin['id_boletin_germinacion']); ?>#germinacion-form" aria-label="Editar boletín <?php echo htmlspecialchars((string) $boletin['muestra_nro'], ENT_QUOTES, 'UTF-8'); ?>"><i class="bi bi-pencil"></i> Editar</a>
+                                <a class="btn btn-sm btn-outline-light" href="/index.php?boletin_germinacion_pdf=<?php echo urlencode((string) $boletin['id_boletin_germinacion']); ?>&amp;tipo_boletin=<?php echo urlencode($boletinGerminacionTipo); ?>" target="_blank" rel="noopener noreferrer" aria-label="Abrir PDF del boletín <?php echo htmlspecialchars((string) $boletin['muestra_nro'], ENT_QUOTES, 'UTF-8'); ?>"><i class="bi bi-file-earmark-pdf"></i> PDF</a>
                             </td>
                         </tr>
                     <?php endforeach; ?>

@@ -2,18 +2,27 @@
 
 declare(strict_types=1);
 
-function build_boletin_germinacion_pdf(int $boletinId): ?array
+function build_boletin_germinacion_pdf(int $boletinId, string $tipoBoletin = 'germinacion'): ?array
 {
+    $titulos = [
+        'germinacion' => 'Germinación',
+        'cold_test' => 'Cold Test',
+        'envejecimiento_acelerado' => 'Envejecimiento acelerado',
+    ];
+    if (!isset($titulos[$tipoBoletin])) {
+        return null;
+    }
+
     try {
         $statement = db()->prepare(
             'SELECT b.*, cl.nombre_cliente, e.nombre_especie, e.cientifico_especie
              FROM boletines_germinacion b
              INNER JOIN clientes cl ON cl.id_cliente = b.id_cliente AND cl.id_empresa = b.id_empresa
              LEFT JOIN especies e ON e.id_especie = b.id_especie AND e.id_empresa = b.id_empresa
-             WHERE b.id_boletin_germinacion = :id AND b.id_empresa = :id_empresa
+             WHERE b.id_boletin_germinacion = :id AND b.id_empresa = :id_empresa AND b.tipo_boletin = :tipo_boletin
              LIMIT 1'
         );
-        $statement->execute([':id' => $boletinId, ':id_empresa' => current_empresa_id()]);
+        $statement->execute([':id' => $boletinId, ':id_empresa' => current_empresa_id(), ':tipo_boletin' => $tipoBoletin]);
         $boletin = $statement->fetch();
         if ($boletin === false) {
             return null;
@@ -99,7 +108,7 @@ function build_boletin_germinacion_pdf(int $boletinId): ?array
         .notes th { background: #ddd; text-align: center; padding: 1.2mm 2mm; }
         .notes td { height: 12mm; vertical-align: top; padding: 1.2mm 2mm; }
     </style></head><body>
-        <h1>BOLETÍN DE GERMINACIÓN</h1>
+        <h1>BOLETÍN DE ' . mb_strtoupper($escape($titulos[$tipoBoletin]), 'UTF-8') . '</h1>
         <div class="rule"></div>
         <table class="meta">
             <tr><td>Análisis Nº</td><td>' . $escape($boletin['analisis_nro'] ?? '') . '</td></tr>
@@ -194,6 +203,6 @@ function build_boletin_germinacion_pdf(int $boletinId): ?array
 
     return [
         'content' => $pdf->Output('', \Mpdf\Output\Destination::STRING_RETURN),
-        'filename' => 'boletin_germinacion_' . $boletinId . '.pdf',
+        'filename' => 'boletin_' . $tipoBoletin . '_' . $boletinId . '.pdf',
     ];
 }

@@ -12,11 +12,16 @@ require __DIR__ . '/includes/boletin_peso_1000_semillas.php';
 require __DIR__ . '/includes/boletin_peso_1000_semillas_pdf.php';
 require __DIR__ . '/includes/boletin_tetrazolio.php';
 require __DIR__ . '/includes/boletin_tetrazolio_pdf.php';
+require __DIR__ . '/includes/boletin_tetrazolio_soja.php';
+require __DIR__ . '/includes/boletin_tetrazolio_soja_pdf.php';
 require __DIR__ . '/includes/boletin_pureza.php';
 require __DIR__ . '/includes/boletin_pureza_pdf.php';
 require __DIR__ . '/includes/boletin_malezas_pdf.php';
 require __DIR__ . '/includes/boletin_germinacion.php';
 require __DIR__ . '/includes/boletin_germinacion_pdf.php';
+require __DIR__ . '/includes/libro_ingreso.php';
+require __DIR__ . '/includes/libro_ingreso_certificado.php';
+require __DIR__ . '/includes/agenda_conteos.php';
 
 $errors = [];
 $successMessage = null;
@@ -57,8 +62,12 @@ $clientEditId = null;
 $speciesForm = [
     'nombre_especie' => '',
     'cientifico_especie' => '',
+    'primer_conteo' => '',
+    'conteo_final' => '',
 ];
 $speciesEditId = null;
+$determinacionLibroForm = ['nombre_determinacion_libro' => '', 'costo' => '0.00'];
+$determinacionLibroEditId = null;
 $cultivarForm = [
     'id_especie' => '',
     'nombre_cultivar' => '',
@@ -112,6 +121,14 @@ $certForm = [
     'localidad_pais_certificado' => '',
     'fecha_emision_certificado' => '',
     'otras_referencias_certificado' => '',
+    'hipoclorito_max_10_certificado' => '',
+    'bioensayo_enlist_certificado' => '',
+    'peroxidasa_positivas_certificado' => '',
+    'peroxidasa_negativas_certificado' => '',
+    'contam_hilo_cantidad_semillas_certificado' => '',
+    'contam_hilo_color_contaminante_certificado' => '',
+    'hipocotilo_variedad_certificado' => '',
+    'hipocotilo_color_contaminante_certificado' => '',
     'clase_materia_inerte_certificado' => '',
     'otras_semillas_certificado' => '',
     'tetrazolio_detalle_certificado' => '',
@@ -239,6 +256,21 @@ $boletinGerminacionForm = [
     ],
 ];
 $boletinGerminacionEditId = null;
+$boletinTetrazolioSojaForm = boletin_tetrazolio_soja_form_vacio();
+$libroIngresoForm = [
+    'presupuesto' => 'SI',
+    'facturado' => 'NO',
+    'fecha_entrada' => date('Y-m-d'),
+    'fecha_inicio_analisis' => '',
+    'remitente' => '',
+    'id_cliente' => '',
+    'origen' => '',
+    'id_especie' => '',
+    'id_cultivar' => '',
+    'lote_observaciones' => '',
+    'id_determinaciones' => [],
+    'ubicacion_camara_archivo' => '',
+];
 
 require __DIR__ . '/handlers/auth.php';
 require __DIR__ . '/handlers/configuracion.php';
@@ -249,6 +281,8 @@ require __DIR__ . '/handlers/clientes.php';
 
 require __DIR__ . '/handlers/especies.php';
 
+require __DIR__ . '/handlers/determinaciones_libro_ingreso.php';
+
 require __DIR__ . '/handlers/cultivares.php';
 
 require __DIR__ . '/handlers/determinaciones.php';
@@ -258,9 +292,14 @@ require __DIR__ . '/handlers/usuarios.php';
 require __DIR__ . '/handlers/certificados.php';
 require __DIR__ . '/handlers/boletin_peso_1000_semillas.php';
 require __DIR__ . '/handlers/boletin_tetrazolio.php';
+require __DIR__ . '/handlers/boletin_tetrazolio_soja.php';
 require __DIR__ . '/handlers/boletin_pureza.php';
 require __DIR__ . '/handlers/boletin_malezas.php';
 require __DIR__ . '/handlers/boletin_germinacion.php';
+require __DIR__ . '/handlers/libro_ingreso.php';
+require __DIR__ . '/handlers/libro_ingreso_boletin.php';
+require __DIR__ . '/handlers/libro_ingreso_certificado.php';
+require __DIR__ . '/handlers/agenda_conteos.php';
 
 if (!is_logged_in()) {
     $isLoginPage = true;
@@ -456,11 +495,37 @@ if (($laboratorySettings['nombre_laboratorio'] ?? '') === '') {
             });
 
             // Resetear el select al cambiar de especie
-            cultivarSelect.value = '';
+            if (!cultivarSelect.selectedOptions[0] || cultivarSelect.selectedOptions[0].dataset.especie !== especieValue) {
+                cultivarSelect.value = '';
+            }
         };
 
         // Filter on page load
         document.addEventListener('DOMContentLoaded', filterCultivares);
+
+        // Variante genérica: la especie declara su select de cultivares con data-cultivar-target
+        function filterCultivaresTarget(especieSelect) {
+            const cultivarSelect = document.getElementById(especieSelect.dataset.cultivarTarget);
+            if (!cultivarSelect) return;
+            const especieValue = especieSelect.value;
+            let seleccionVisible = false;
+
+            cultivarSelect.querySelectorAll('option').forEach(option => {
+                const visible = option.value === '' || option.dataset.especie === especieValue;
+                option.style.display = visible ? 'block' : 'none';
+                if (visible && option.value !== '' && option.value === cultivarSelect.value) {
+                    seleccionVisible = true;
+                }
+            });
+
+            if (!seleccionVisible) {
+                cultivarSelect.value = '';
+            }
+        }
+
+        document.addEventListener('DOMContentLoaded', function () {
+            document.querySelectorAll('select[data-cultivar-target]').forEach(filterCultivaresTarget);
+        });
 
         function syncScientificName(speciesSelect) {
             const scientificField = document.getElementById(speciesSelect.dataset.scientificTarget);

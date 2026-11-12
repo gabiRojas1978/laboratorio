@@ -115,6 +115,9 @@ try {
 <section class="section-panel">
     <h2>Alta de certificado</h2>
     <p>Completa los datos del análisis y guarda el certificado.</p>
+    <?php foreach ($certPrecargaAvisos ?? [] as $aviso): ?>
+        <div class="alert alert-info"><?php echo htmlspecialchars($aviso, ENT_QUOTES, 'UTF-8'); ?></div>
+    <?php endforeach; ?>
 
     <?php foreach ($errors as $error): ?>
         <div class="alert alert-danger"><?php echo htmlspecialchars($error, ENT_QUOTES, 'UTF-8'); ?></div>
@@ -405,7 +408,7 @@ try {
             </div>
 
             <div class="col-12">
-                <label for="pg_contenido_humedad_certificado" class="form-label">Contenido humedad (%)</label>
+                <label for="pg_contenido_humedad_certificado" class="form-label"><?php echo $page === 'Certificadogeneral' ? 'Contenido humedad (%) — Higrómetro Delver' : 'Contenido humedad (%)'; ?></label>
                 <input type="number" step="0.01" min="0" class="form-control" id="pg_contenido_humedad_certificado" name="pg_contenido_humedad_certificado" value="<?php echo htmlspecialchars($certForm['pg_contenido_humedad_certificado'], ENT_QUOTES, 'UTF-8'); ?>">
             </div>
 
@@ -444,7 +447,7 @@ try {
                 </div>
 
                 <hr class="my-4">
-                <h5>Vigor</h5>
+                <h5>Vigor: Cold Test (prueba de frío)</h5>
 
                 <div class="col-md-6">
                     <label for="vigor_nro_dias_certificado" class="form-label">Nro de días</label>
@@ -468,6 +471,41 @@ try {
                 <label for="otras_semillas_certificado" class="form-label">Otras semillas</label>
                 <input type="text" step="1" class="form-control" id="otras_semillas_certificado" name="otras_semillas_certificado" value="<?php echo htmlspecialchars($certForm['otras_semillas_certificado'], ENT_QUOTES, 'UTF-8'); ?>">
             </div>
+
+            <?php if ($page === 'Certificadogeneral'): ?>
+                <div class="col-md-6">
+                    <label for="hipoclorito_max_10_certificado" class="form-label">Hipoclorito max 10%:</label>
+                    <input type="text" class="form-control" id="hipoclorito_max_10_certificado" name="hipoclorito_max_10_certificado" maxlength="255" value="<?php echo htmlspecialchars($certForm['hipoclorito_max_10_certificado'], ENT_QUOTES, 'UTF-8'); ?>">
+                </div>
+                <div class="col-md-6">
+                    <label for="bioensayo_enlist_certificado" class="form-label">Bioensayo Enlist:</label>
+                    <input type="text" class="form-control" id="bioensayo_enlist_certificado" name="bioensayo_enlist_certificado" maxlength="255" value="<?php echo htmlspecialchars($certForm['bioensayo_enlist_certificado'], ENT_QUOTES, 'UTF-8'); ?>">
+                </div>
+                <div class="col-md-3">
+                    <label for="peroxidasa_positivas_certificado" class="form-label">Peroxidasa positivas (%)</label>
+                    <input type="number" class="form-control" id="peroxidasa_positivas_certificado" name="peroxidasa_positivas_certificado" step="0.01" min="0" max="100" value="<?php echo htmlspecialchars($certForm['peroxidasa_positivas_certificado'], ENT_QUOTES, 'UTF-8'); ?>">
+                </div>
+                <div class="col-md-3">
+                    <label for="peroxidasa_negativas_certificado" class="form-label">Peroxidasa negativas (%)</label>
+                    <input type="number" class="form-control" id="peroxidasa_negativas_certificado" name="peroxidasa_negativas_certificado" step="0.01" min="0" max="100" value="<?php echo htmlspecialchars($certForm['peroxidasa_negativas_certificado'], ENT_QUOTES, 'UTF-8'); ?>">
+                </div>
+                <div class="col-md-3">
+                    <label for="contam_hilo_cantidad_semillas_certificado" class="form-label">Contam. x hilo (250gr) - Cantidad de semillas (%)</label>
+                    <input type="number" class="form-control" id="contam_hilo_cantidad_semillas_certificado" name="contam_hilo_cantidad_semillas_certificado" step="0.01" min="0" max="100" value="<?php echo htmlspecialchars($certForm['contam_hilo_cantidad_semillas_certificado'], ENT_QUOTES, 'UTF-8'); ?>">
+                </div>
+                <div class="col-md-3">
+                    <label for="contam_hilo_color_contaminante_certificado" class="form-label">Contam. x hilo (250gr) - Color contaminante</label>
+                    <input type="text" class="form-control" id="contam_hilo_color_contaminante_certificado" name="contam_hilo_color_contaminante_certificado" maxlength="255" value="<?php echo htmlspecialchars($certForm['contam_hilo_color_contaminante_certificado'], ENT_QUOTES, 'UTF-8'); ?>">
+                </div>
+                <div class="col-md-3">
+                    <label for="hipocotilo_variedad_certificado" class="form-label">Hipocotilo - Variedad</label>
+                    <input type="text" class="form-control" id="hipocotilo_variedad_certificado" name="hipocotilo_variedad_certificado" maxlength="255" value="<?php echo htmlspecialchars($certForm['hipocotilo_variedad_certificado'], ENT_QUOTES, 'UTF-8'); ?>">
+                </div>
+                <div class="col-md-3">
+                    <label for="hipocotilo_color_contaminante_certificado" class="form-label">Hipocotilo - Color contaminante</label>
+                    <input type="text" class="form-control" id="hipocotilo_color_contaminante_certificado" name="hipocotilo_color_contaminante_certificado" maxlength="255" value="<?php echo htmlspecialchars($certForm['hipocotilo_color_contaminante_certificado'], ENT_QUOTES, 'UTF-8'); ?>">
+                </div>
+            <?php endif; ?>
 
             <hr class="my-4">
             <h5>Otras Determinaciones</h5>

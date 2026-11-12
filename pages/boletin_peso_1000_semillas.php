@@ -2,6 +2,9 @@
 
 declare(strict_types=1);
 
+require_once __DIR__ . '/../includes/boletin_edicion.php';
+[$boletinEditId, $boletinEdicionInvalida] = boletin_edicion_cargar('peso_1000_semillas', $boletinPesoForm, $errors);
+
 $clientesOptions = [];
 try {
     $clientesOptionsStatement = db()->prepare('SELECT id_cliente, nombre_cliente FROM clientes WHERE id_empresa = :id_empresa ORDER BY nombre_cliente ASC');
@@ -48,6 +51,9 @@ try {
 ?>
 <section class="section-panel">
     <h2>Boletín: Peso de 1000 semillas</h2>
+    <?php if ($boletinEditId !== null): ?>
+        <p>Editando boletín #<?php echo $boletinEditId; ?>. <a href="/index.php?page=boletin_peso_1000_semillas">Cancelar edición</a></p>
+    <?php endif; ?>
     <p>Cargá las repeticiones de peso (mínimo 2, hasta 16) para calcular varianza, desvío estándar, coeficiente de variación y el resultado final.</p>
 
     <?php foreach ($errors as $error): ?>
@@ -58,8 +64,14 @@ try {
         <div class="alert alert-success"><?php echo htmlspecialchars($successMessage, ENT_QUOTES, 'UTF-8'); ?></div>
     <?php endif; ?>
 
-    <form method="post" class="row g-3 mt-1">
+    <form method="post" class="row g-3 mt-1" id="boletin-form">
         <input type="hidden" name="save_boletin_peso" value="1">
+        <?php if (isset($_GET['ingreso_id']) && filter_var($_GET['ingreso_id'], FILTER_VALIDATE_INT, ['options' => ['min_range' => 1]]) !== false): ?>
+            <input type="hidden" name="ingreso_id" value="<?php echo (int) $_GET['ingreso_id']; ?>">
+        <?php endif; ?>
+        <?php if ($boletinEditId !== null): ?>
+            <input type="hidden" name="id_boletin" value="<?php echo $boletinEditId; ?>">
+        <?php endif; ?>
 
         <div class="col-md-4">
             <label for="id_cliente" class="form-label">Cliente *</label>
@@ -127,7 +139,7 @@ try {
         </div>
 
         <div class="col-12 d-flex gap-2">
-            <button type="submit" class="btn btn-brand">Guardar boletín</button>
+            <button type="submit" class="btn btn-brand" <?php echo $boletinEdicionInvalida ? 'disabled' : ''; ?>><?php echo $boletinEditId !== null ? 'Actualizar boletín' : 'Guardar boletín'; ?></button>
             <a href="/index.php?page=boletin_peso_1000_semillas" class="btn btn-outline-brand">Cancelar</a>
         </div>
     </form>
@@ -194,6 +206,7 @@ try {
                             <td><?php echo htmlspecialchars($boletin['coeficiente_variacion'] !== null ? number_format((float) $boletin['coeficiente_variacion'], 2) : '', ENT_QUOTES, 'UTF-8'); ?></td>
                             <td><?php echo htmlspecialchars($boletin['resultado_peso_mil'] !== null ? number_format((float) $boletin['resultado_peso_mil'], 4) : '', ENT_QUOTES, 'UTF-8'); ?></td>
                             <td>
+                                <a class="btn btn-sm btn-outline-light" href="/index.php?page=boletin_peso_1000_semillas&amp;editar=<?php echo (int) $boletin['id_boletin_peso']; ?>#boletin-form">Editar</a>
                                 <a class="btn btn-sm btn-outline-light" href="/index.php?boletin_peso_pdf=<?php echo urlencode((string) $boletin['id_boletin_peso']); ?>" target="_blank" rel="noopener noreferrer" aria-label="Abrir PDF del boletín <?php echo htmlspecialchars((string) $boletin['muestra_nro'], ENT_QUOTES, 'UTF-8'); ?>">
                                     <i class="bi bi-file-earmark-pdf"></i> PDF
                                 </a>
