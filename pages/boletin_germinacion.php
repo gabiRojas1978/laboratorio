@@ -125,10 +125,18 @@ try {
 <section class="section-panel" id="germinacion-form">
     <?php if ($boletinGerminacionEditId !== null): ?>
         <h2>Editar boletín de <?php echo htmlspecialchars($boletinGerminacionTitulo, ENT_QUOTES, 'UTF-8'); ?> <span class="badge bg-secondary fs-6">#<?php echo $boletinGerminacionEditId; ?></span></h2>
-        <p>Actualiza el 1er conteo o completa el 2do conteo para cerrar el resultado final.</p>
+        <?php if ($boletinGerminacionTipo === 'cold_test'): ?>
+            <p>Actualiza el 1er conteo. El 2do conteo es opcional y permite cerrar el resultado final.</p>
+        <?php else: ?>
+            <p>Actualiza el 1er conteo o completa el 2do conteo para cerrar el resultado final.</p>
+        <?php endif; ?>
     <?php else: ?>
         <h2>Boletín de <?php echo htmlspecialchars($boletinGerminacionTitulo, ENT_QUOTES, 'UTF-8'); ?></h2>
-        <p>Carga el 1er conteo (indicador temprano) y, cuando esté disponible, el 2do conteo final por repetición.</p>
+        <?php if ($boletinGerminacionTipo === 'cold_test'): ?>
+            <p>Completa al menos el 1er conteo en las cuatro repeticiones para guardar el boletín. El 2do conteo es opcional.</p>
+        <?php else: ?>
+            <p>Carga el 1er conteo (indicador temprano) y, cuando esté disponible, el 2do conteo final por repetición.</p>
+        <?php endif; ?>
     <?php endif; ?>
 
     <?php foreach ($errors as $error): ?>

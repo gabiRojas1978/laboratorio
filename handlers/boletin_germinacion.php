@@ -145,6 +145,28 @@ function leer_repeticiones_boletin_germinacion(array $postedRepeticiones): array
     return [$repeticionesForm, $huboError ? [] : $repeticionesData, $huboError, $erroresRepeticiones];
 }
 
+function boletin_germinacion_primer_conteo_iniciado(array $repeticiones): bool
+{
+    if (count($repeticiones) !== 4) {
+        return false;
+    }
+
+    foreach ($repeticiones as $repeticion) {
+        $categorias = [
+            $repeticion['primer_conteo_normales'],
+            $repeticion['primer_conteo_anormales'],
+            $repeticion['primer_conteo_duras'],
+            $repeticion['primer_conteo_frescas'],
+            $repeticion['primer_conteo_muertas'],
+        ];
+        if (array_filter($categorias, static fn($valor) => $valor !== null) === []) {
+            return false;
+        }
+    }
+
+    return true;
+}
+
 if (is_logged_in() && $_SERVER['REQUEST_METHOD'] === 'POST' && (isset($_POST['save_boletin_germinacion']) || isset($_POST['update_boletin_germinacion']))) {
     $esActualizacion = isset($_POST['update_boletin_germinacion']);
     $ingresoAsociadoId = null;
@@ -213,6 +235,9 @@ if (is_logged_in() && $_SERVER['REQUEST_METHOD'] === 'POST' && (isset($_POST['sa
         foreach ($erroresRepeticiones as $errorRepeticion) {
             $errors[] = $errorRepeticion;
         }
+    }
+    if ($boletinGerminacionTipo === 'cold_test' && !$huboErrorRepeticiones && !boletin_germinacion_primer_conteo_iniciado($repeticionesData)) {
+        $errors[] = 'Para guardar un boletín de Cold Test, completa al menos el 1er conteo en las cuatro repeticiones. El 2do conteo es opcional.';
     }
 
     $clienteId = filter_var($boletinGerminacionForm['id_cliente'], FILTER_VALIDATE_INT, ['options' => ['min_range' => 1]]);

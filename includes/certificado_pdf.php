@@ -25,6 +25,20 @@ function certificate_optional_results_html(array $certificate): string
         . $renderLine('Hipocotilo - Color contaminante', $certificate['hipocotilo_color_contaminante_certificado'] ?? '');
 }
 
+function certificate_logo_dimensions_mm(int $imageWidth, int $imageHeight): ?array
+{
+    if ($imageWidth <= 0 || $imageHeight <= 0) {
+        return null;
+    }
+
+    $scale = min(112 / $imageWidth, 30 / $imageHeight);
+
+    return [
+        'width' => round($imageWidth * $scale, 2),
+        'height' => round($imageHeight * $scale, 2),
+    ];
+}
+
 function build_certificado_pdf(int $certificadoId): ?array
 {
     require_once __DIR__ . '/../vendor/autoload.php';
@@ -92,13 +106,20 @@ function build_certificado_pdf(int $certificadoId): ?array
     $esCertificadoTetrazolio = $tipoCertificado === 'certificadotetrazolio';
     $determinacionesAdicionalesHtml = $esCertificadoGeneral ? certificate_optional_results_html($certificadoPdf) : '';
     $membreteImagePath = certificate_logo_path(current_empresa_id());
+    $membreteImageSize = $membreteImagePath !== null && is_file($membreteImagePath)
+        ? @getimagesize($membreteImagePath)
+        : false;
+    $logoDimensions = is_array($membreteImageSize)
+        ? certificate_logo_dimensions_mm((int) $membreteImageSize[0], (int) $membreteImageSize[1])
+        : null;
     $brandHeaderHtml = '';
 
-    if ($membreteImagePath !== null && is_file($membreteImagePath)) {
+    if ($membreteImagePath !== null && $logoDimensions !== null) {
         $membreteImagePathNormalized = str_replace('\\', '/', $membreteImagePath);
         $brandHeaderHtml = '<div class="center brand"><img src="'
             . htmlspecialchars($membreteImagePathNormalized, ENT_QUOTES, 'UTF-8')
-            . '" alt="Logo del laboratorio" class="brand-image"></div>';
+            . '" alt="Logo del laboratorio" class="brand-image" style="width:'
+            . $logoDimensions['width'] . 'mm;height:' . $logoDimensions['height'] . 'mm"></div>';
     }
 
     $germinacionHeading = $esCertificadoInase ? 'GERMINACIÓN' : 'PODER GERMINATIVO';
@@ -141,8 +162,8 @@ function build_certificado_pdf(int $certificadoId): ?array
             .bold { font-weight: 700; }
             .title { font-size: 42px; font-weight: 700; letter-spacing: 1px; margin-top: 2px; }
             .subtitle { font-size: 13px; line-height: 1.15; }
-            .brand { width: 100%; height: 25mm; margin: 0 auto 4px; text-align: center; }
-            .brand-image { width: 102mm; height: 25mm; max-width: 100%; object-fit: contain; }
+            .brand { width: 100%; height: 30mm; margin: 0 auto 4px; text-align: center; }
+            .brand-image { max-width: 100%; }
             .brand-logo { width: 62px; height: 62px; background: #4a5c2f; border: 1px solid #404040; display: inline-block; vertical-align: top; margin-right: 8px; }
             .brand-text { display: inline-block; vertical-align: top; text-align: left; }
             .brand-main { font-size: 12px; font-weight: 700; line-height: 1.2; margin-top: 1px; }
@@ -267,8 +288,8 @@ function build_certificado_pdf(int $certificadoId): ?array
             body { font-family: serif; font-size: 11px; color: #222; }
             .center { text-align: center; }
             .bold { font-weight: 700; }
-            .brand { width: 100%; height: 25mm; margin: 0 auto 3px; text-align: center; }
-            .brand-image { width: 102mm; height: 25mm; max-width: 100%; object-fit: contain; }
+            .brand { width: 100%; height: 30mm; margin: 0 auto 3px; text-align: center; }
+            .brand-image { max-width: 100%; }
             .title { font-size: 29px; font-weight: 700; line-height: 1.05; letter-spacing: .5px; margin: 2px 0 5px; }
             .subtitle { border-top: 1px solid #333; padding-top: 4px; font-family: sans-serif; font-size: 10px; }
             .section-title { text-align: center; font-size: 17px; font-weight: 700; margin: 12px 0 5px; }

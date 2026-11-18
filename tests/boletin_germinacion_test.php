@@ -39,6 +39,24 @@ verificar($data[0]['segundo_conteo_normales'] === null, 'Un segundo conteo total
 $calculos = calcular_boletin_germinacion($data);
 verificar($calculos['primer_promedio'] === 94.25, 'El primer promedio debe ser 94.25.');
 verificar($calculos['estado'] === 'primer_conteo' && $calculos['resultado_plantulas_normales'] === null, 'No debe finalizarse un segundo conteo vacio.');
+verificar(boletin_germinacion_primer_conteo_iniciado($data), 'El primer conteo en las cuatro repeticiones debe permitir guardar un Cold Test sin segundo conteo.');
+$primerConteoIncompleto = $data;
+$primerConteoIncompleto[3]['primer_conteo_normales'] = null;
+$primerConteoIncompleto[3]['primer_conteo_anormales'] = null;
+$primerConteoIncompleto[3]['primer_conteo_duras'] = null;
+$primerConteoIncompleto[3]['primer_conteo_frescas'] = null;
+$primerConteoIncompleto[3]['primer_conteo_muertas'] = null;
+verificar(!boletin_germinacion_primer_conteo_iniciado($primerConteoIncompleto), 'Debe exigirse el primer conteo en cada repeticion del Cold Test.');
+verificar(!boletin_germinacion_primer_conteo_iniciado([]), 'No debe aceptarse un Cold Test sin repeticiones con primer conteo.');
+$sinPrimerConteo = $posted;
+foreach ($sinPrimerConteo as &$repeticion) {
+    foreach (['normales', 'anormales', 'duras', 'frescas', 'muertas'] as $categoria) {
+        $repeticion['primer_conteo_' . $categoria] = '';
+    }
+}
+unset($repeticion);
+[, $sinPrimerConteoData] = leer_repeticiones_boletin_germinacion($sinPrimerConteo);
+verificar(!boletin_germinacion_primer_conteo_iniciado($sinPrimerConteoData), 'No debe guardarse Cold Test con las cuatro repeticiones sin primer conteo.');
 
 $casosValidos = [
     'solo normales' => ['primer_conteo_anormales' => ''],
