@@ -3,12 +3,13 @@
 declare(strict_types=1);
 
 $certificateLogoPath = certificate_logo_path(current_empresa_id());
+$certificateSignaturePath = certificate_signature_path(current_empresa_id());
 $certificateSettings = $laboratorySettings;
 $smtpSettings = get_smtp_settings(current_empresa_id());
 ?>
 <section class="section-panel">
     <h2>Configuración</h2>
-    <p>Administrá los datos y el logo que se imprimen en los certificados de este laboratorio.</p>
+    <p>Administrá los datos, el logo y la firma que se imprimen en los certificados de este laboratorio.</p>
 
     <?php foreach ($errors as $error): ?>
         <div class="alert alert-danger"><?php echo htmlspecialchars($error, ENT_QUOTES, 'UTF-8'); ?></div>
@@ -60,6 +61,27 @@ $smtpSettings = get_smtp_settings(current_empresa_id());
             <button type="submit" class="btn btn-brand">Guardar datos del certificado</button>
         </div>
     </form>
+
+    <form method="post" enctype="multipart/form-data" class="row g-3 mt-1">
+        <input type="hidden" name="save_firma_certificado" value="1">
+        <div class="col-md-8">
+            <label for="imagen_firma_director_tecnico" class="form-label">Imagen de la firma del Director Técnico</label>
+            <input class="form-control" type="file" id="imagen_firma_director_tecnico" name="imagen_firma_director_tecnico" accept="image/png,image/jpeg" required>
+            <div class="form-text">Formatos admitidos: PNG o JPG. Tamaño máximo: 5 MB. Se imprime sobre el texto de la firma.</div>
+        </div>
+        <div class="col-md-4 d-flex align-items-end">
+            <button type="submit" class="btn btn-brand">Guardar imagen de firma</button>
+        </div>
+    </form>
+    <?php if ($certificateSignaturePath !== null): ?>
+        <div class="d-flex align-items-center gap-2 mt-3">
+            <span class="badge bg-success">Imagen de firma activa</span>
+            <form method="post" onsubmit="return confirm('¿Quitar la imagen de firma del certificado?')">
+                <input type="hidden" name="delete_firma_certificado" value="1">
+                <button type="submit" class="btn btn-sm btn-outline-danger">Quitar imagen</button>
+            </form>
+        </div>
+    <?php endif; ?>
 
     <dl class="row mt-4 mb-0">
         <dt class="col-sm-4">Carpeta de guardado de certificados</dt>

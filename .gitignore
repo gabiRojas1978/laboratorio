@@ -1,6 +1,9 @@
 config/database.local.php
 config/config copy.php
 storage/empresa_*/logo_certificado.*
+storage/empresa_*/firma_director_tecnico
+storage/empresa_*/.firma_upload_*
 storage/empresa_*/certificado_config.json
 storage/empresa_*/smtp_config.json
 storage/empresa_*/certificado_*.pdf
+tests/certificado_firma_upload_test.php

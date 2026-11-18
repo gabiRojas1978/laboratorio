@@ -15,6 +15,11 @@ function certificate_logo_path(int $idEmpresa): ?string
     return null;
 }
 
+function certificate_signature_path(int $idEmpresa): ?string
+{
+    return $GLOBALS['firmaPrueba'] ?? null;
+}
+
 function get_certificate_settings(int $idEmpresa): array
 {
     return [
@@ -106,5 +111,36 @@ if ($result['filename'] !== 'certificado_99.pdf') {
 }
 
 @unlink(sys_get_temp_dir() . DIRECTORY_SEPARATOR . $result['filename']);
+
+$firmaPrueba = tempnam(sys_get_temp_dir(), 'firma_certificado_');
+if ($firmaPrueba === false) {
+    throw new RuntimeException('No se pudo crear la imagen de prueba.');
+}
+try {
+    $image = imagecreatetruecolor(300, 100);
+    imagepng($image, $firmaPrueba);
+    imagedestroy($image);
+    $html = certificate_signature_html($firmaPrueba, 'Directora <técnica>');
+    if (!str_contains($html, 'width:30mm;height:10mm') || !str_contains($html, 'Directora &lt;técnica&gt;')) {
+        throw new RuntimeException('La firma debe mantener sus proporciones y conservar el texto escapado.');
+    }
+    if (certificate_signature_html(null, 'Directora <técnica>') !== 'Directora &lt;técnica&gt;') {
+        throw new RuntimeException('Sin imagen debe conservarse el texto de firma.');
+    }
+
+    foreach (['certificadogeneral', 'certificadoinase', 'certificadotetrazolio'] as $tipo) {
+        $certificadoTetrazolioPrueba['tipo_certificado'] = $tipo;
+        $result = build_certificado_pdf(99);
+        if ($result === null || !preg_match('/\/Subtype\s*\/Image\b/', $result['content'])) {
+            throw new RuntimeException('El certificado debe incluir la imagen de firma: ' . $tipo);
+        }
+        if (preg_match_all('/\/Type\s*\/Page\b/', $result['content']) !== 1) {
+            throw new RuntimeException('El certificado con firma debe ocupar una hoja: ' . $tipo);
+        }
+    }
+} finally {
+    unlink($firmaPrueba);
+    @unlink(sys_get_temp_dir() . DIRECTORY_SEPARATOR . 'certificado_99.pdf');
+}
 
 echo "OK: certificado de tetrazolio generado en una hoja.\n";

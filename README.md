@@ -28,6 +28,12 @@ Proyecto base en PHP 8 con Bootstrap para un laboratorio de semillas.
 
 ## Certificado general
 
+En **Configuración** se puede cargar una imagen PNG o JPG (hasta 5 MB) de la
+firma del director técnico. Se guarda por laboratorio y se imprime en el
+recuadro de firma de los certificados, encima del texto configurado. La imagen
+puede reemplazarse o quitarse sin modificar ese texto.
+La prueba `php tests/certificado_tetrazolio_pdf_test.php` verifica su impresión.
+
 El Certificado general incluye **Hipoclorito max 10%**, **Peroxidasa** (positivas
 y negativas), **Contam. x hilo (250gr)** (cantidad de semillas y color contaminante)
 y **Hipocotilo** (variedad y color contaminante). Los valores se guardan con el

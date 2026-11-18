@@ -58,6 +58,29 @@ if (is_logged_in() && $_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['del
     exit;
 }
 
+if (is_logged_in() && $_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['save_firma_certificado'])) {
+    $signatureUpload = $_FILES['imagen_firma_director_tecnico'] ?? [];
+    $signatureError = save_certificate_signature(current_empresa_id(), is_array($signatureUpload) ? $signatureUpload : []);
+    if ($signatureError !== null) {
+        $errors[] = $signatureError;
+    } else {
+        $_SESSION['success_message'] = 'Imagen de firma del director técnico actualizada correctamente.';
+        header('Location: /index.php?page=configuracion');
+        exit;
+    }
+}
+
+if (is_logged_in() && $_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['delete_firma_certificado'])) {
+    $signaturePath = certificate_signature_path(current_empresa_id());
+    if ($signaturePath !== null && !@unlink($signaturePath)) {
+        $errors[] = 'No fue posible quitar la imagen de la firma.';
+    } else {
+        $_SESSION['success_message'] = 'Imagen de firma del director técnico eliminada.';
+        header('Location: /index.php?page=configuracion');
+        exit;
+    }
+}
+
 if (is_logged_in() && $_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['save_datos_certificado'])) {
     $certificateSettings = [
         'nombre_laboratorio' => trim((string) ($_POST['nombre_laboratorio'] ?? '')),

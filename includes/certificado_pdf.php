@@ -39,6 +39,24 @@ function certificate_logo_dimensions_mm(int $imageWidth, int $imageHeight): ?arr
     ];
 }
 
+function certificate_signature_html(?string $path, string $name): string
+{
+    $html = '';
+    if ($path !== null) {
+        $imageSize = @getimagesize($path);
+        if (!is_array($imageSize) || $imageSize[0] <= 0 || $imageSize[1] <= 0
+            || !in_array($imageSize['mime'] ?? '', ['image/png', 'image/jpeg'], true)) {
+            throw new RuntimeException('La imagen de la firma del director técnico no es válida.');
+        }
+        $scale = min(50 / $imageSize[0], 10 / $imageSize[1]);
+        $html = '<img src="' . htmlspecialchars(str_replace('\\', '/', $path), ENT_QUOTES, 'UTF-8')
+            . '" alt="Firma del director técnico" style="width:' . round($imageSize[0] * $scale, 2)
+            . 'mm;height:' . round($imageSize[1] * $scale, 2) . 'mm"><br>';
+    }
+
+    return $html . htmlspecialchars($name, ENT_QUOTES, 'UTF-8');
+}
+
 function build_certificado_pdf(int $certificadoId): ?array
 {
     require_once __DIR__ . '/../vendor/autoload.php';
@@ -360,6 +378,7 @@ function build_certificado_pdf(int $certificadoId): ?array
     }
 
     //------------------------------------------------
+    $signatureHtml = certificate_signature_html(certificate_signature_path(current_empresa_id()), $certificateSettings['firma_director_tecnico']);
     $footerHtml = '
     <table class="grid footer" style="width:100%; border-collapse: collapse;">
         <tr class="bold">
@@ -370,7 +389,7 @@ function build_certificado_pdf(int $certificadoId): ?array
         <tr>
             <td style="border:1px solid #666; padding:4px 5px; height:54px; text-align:center;">' . htmlspecialchars($certificateSettings['localidad_pais'], ENT_QUOTES, 'UTF-8') . '</td>
             <td style="border:1px solid #666; padding:4px 5px; text-align:center;">' . htmlspecialchars(format_date_long_spanish((string) ($certificadoPdf['fecha_emision_certificado'] ?? '')), ENT_QUOTES, 'UTF-8') . '</td>
-            <td style="border:1px solid #666; padding:4px 5px 5px; text-align:center; vertical-align:bottom;">' . htmlspecialchars($certificateSettings['firma_director_tecnico'], ENT_QUOTES, 'UTF-8') . '</td>
+            <td style="border:1px solid #666; padding:4px 5px 5px; text-align:center; vertical-align:bottom;">' . $signatureHtml . '</td>
         </tr>
     </table>
     <div class="phone" style="text-align:center; font-size:10px; letter-spacing:1px; margin-top:6px;">TELÉFONO 2346-316003</div>
