@@ -37,6 +37,8 @@ if (is_superadmin() && $_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['sa
             $empresaStatement->execute([':nombre_empresa' => $empresaForm['nombre_empresa']]);
             $newEmpresaId = (int) db()->lastInsertId();
 
+            anormalidades_inicializar_empresa(db(), $newEmpresaId);
+
             $adminStatement = db()->prepare(
                 'INSERT INTO usuarios (id_empresa, nombre_usuario, username_usuario, email_usuario, password_hash_usuario, activo_usuario, es_superadmin) VALUES (:id_empresa, :nombre_usuario, :username_usuario, :email_usuario, :password_hash_usuario, 1, 0)'
             );
@@ -60,7 +62,7 @@ if (is_superadmin() && $_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['sa
             if ((int) $throwable->getCode() === 23000) {
                 $errors[] = 'Ya existe un usuario con ese nombre de usuario.';
             } else {
-                $errors[] = 'No fue posible dar de alta la empresa.';
+                $errors[] = 'No fue posible dar de alta la empresa. Verifica la base de datos y la migración de anormalidades.';
             }
         }
     }

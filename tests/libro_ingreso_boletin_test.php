@@ -62,6 +62,12 @@ final class LibroBoletinTestDb
 
     public function execute(array $parametros): void
     {
+        preg_match_all('/:[a-z_]+/', $this->ultimaConsulta, $coincidencias);
+        $esperados = array_unique($coincidencias[0]);
+        $recibidos = array_keys($parametros);
+        sort($esperados);
+        sort($recibidos);
+        verificar($esperados === $recibidos, 'Los parámetros deben coincidir con la consulta SQL.');
         $this->parametros = $parametros;
     }
 

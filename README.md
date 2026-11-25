@@ -28,6 +28,11 @@ Proyecto base en PHP 8 con Bootstrap para un laboratorio de semillas.
 
 ## Certificado general
 
+En los listados de certificados general, INASE y tetrazolio se puede eliminar un
+certificado con confirmación. También se elimina su PDF guardado en el servidor;
+los ingresos y boletines de origen no se modifican. Las copias ya descargadas o
+enviadas por correo no se eliminan.
+
 En **Configuración** se puede cargar una imagen PNG o JPG (hasta 5 MB) de la
 firma del director técnico. Se guarda por laboratorio y se imprime en el
 recuadro de firma de los certificados, encima del texto configurado. La imagen
@@ -61,6 +66,23 @@ http://localhost:8000
 ```
 
 Si usas Laragon, también puedes apuntar el virtual host a esta carpeta.
+
+## Anormalidades
+
+En **Configuración → Administrar anormalidades** se pueden dar de alta y editar
+el código, la etiqueta completa, el grupo o tipo, la categoría principal y la
+subcategoría. Cada laboratorio administra su catálogo por separado y el código
+no puede repetirse dentro de una misma empresa.
+
+Ejecutar una sola vez
+[2026-11-18_anormalidades.sql](database/migrations/2026-11-18_anormalidades.sql)
+antes de usar la pantalla o dar de alta nuevas empresas. La migración crea el
+catálogo y su plantilla, y carga los 71 registros proporcionados en cada empresa
+existente. Las empresas nuevas reciben una copia de la plantilla original; los
+cambios de un laboratorio no afectan a otros ni a la plantilla.
+
+`php tests/anormalidades_test.php` verifica la migración en tablas temporales,
+el alta, la edición, las validaciones y el aislamiento entre empresas.
 
 ## Edición de boletines
 
@@ -220,6 +242,17 @@ cálculos y formato PDF que Germinación, pero sus registros se mantienen separa
 Antes de usarlos, ejecutar
 [2026-10-26_boletin_germinacion_tipos.sql](database/migrations/2026-10-26_boletin_germinacion_tipos.sql)
 después de las migraciones del boletín de Germinación.
+
+En el boletín de Germinación se pueden seleccionar varias anormalidades del
+catálogo del laboratorio, debajo de las repeticiones. La selección se guarda con
+el boletín, puede modificarse al editarlo y aparece en su PDF. El PDF usa las
+etiquetas actuales del catálogo y puede ocupar más de una página si es necesario.
+Para habilitarlo, ejecutar una sola vez
+[2026-11-18_boletin_germinacion_anormalidades.sql](database/migrations/2026-11-18_boletin_germinacion_anormalidades.sql)
+después de las migraciones de Germinación y Anormalidades.
+Las pruebas `php tests/boletin_germinacion_anormalidades_test.php`,
+`php tests/boletin_germinacion_anormalidades_guardado_test.php` y
+`php tests/boletin_germinacion_pdf_test.php` verifican la selección, su guardado y el PDF.
 
 ## Certificados desde el libro de ingreso
 

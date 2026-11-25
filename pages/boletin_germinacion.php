@@ -5,6 +5,19 @@ declare(strict_types=1);
 $clientesOptions = [];
 $especiesOptions = [];
 $boletinesGerminacion = [];
+$anormalidadesOptions = [];
+$anormalidadesDisponibles = true;
+
+if ($boletinGerminacionTipo === 'germinacion') {
+    try {
+        $statement = db()->prepare('SELECT id_anormalidad, etiqueta, categoria_principal, subcategoria FROM anormalidades WHERE id_empresa = :id_empresa ORDER BY categoria_principal, subcategoria, codigo');
+        $statement->execute([':id_empresa' => current_empresa_id()]);
+        $anormalidadesOptions = $statement->fetchAll();
+    } catch (PDOException $exception) {
+        $anormalidadesDisponibles = false;
+        $errors[] = 'No se pudo cargar el catálogo de anormalidades.';
+    }
+}
 
 try {
     $statement = db()->prepare('SELECT id_cliente, nombre_cliente FROM clientes WHERE id_empresa = :id_empresa ORDER BY nombre_cliente ASC');
@@ -76,8 +89,20 @@ if (isset($_GET['editar']) && $boletinGerminacionEditId === null) {
                         'segundo_conteo_muertas' => (string) ($repeticionRow['segundo_conteo_muertas'] ?? ''),
                     ];
                 }
+                if ($boletinGerminacionTipo === 'germinacion') {
+                    $anormalidadesStatement = db()->prepare(
+                        'SELECT ba.id_anormalidad FROM boletin_germinacion_anormalidades ba
+                         INNER JOIN anormalidades a ON a.id_anormalidad = ba.id_anormalidad AND a.id_empresa = :id_empresa
+                         WHERE ba.id_boletin_germinacion = :id_boletin'
+                    );
+                    $anormalidadesStatement->execute([':id_empresa' => current_empresa_id(), ':id_boletin' => $boletinGerminacionEditId]);
+                    $boletinGerminacionForm['id_anormalidades'] = array_map('intval', $anormalidadesStatement->fetchAll(PDO::FETCH_COLUMN));
+                }
             }
         } catch (Throwable $throwable) {
+            if ($boletinGerminacionTipo === 'germinacion') {
+                $anormalidadesDisponibles = false;
+            }
             $errors[] = 'No se pudo cargar el boletín para edición.';
         }
     }
@@ -336,12 +361,61 @@ try {
             </table>
         </div>
 
+        <?php if ($boletinGerminacionTipo === 'germinacion'): ?>
+            <div class="col-12">
+                <label class="form-label">Anormalidades</label>
+                <div class="d-flex flex-wrap align-items-center gap-2">
+                    <button type="button" class="btn btn-outline-brand" data-bs-toggle="modal" data-bs-target="#germAnormalidadesModal" <?php echo !$anormalidadesDisponibles ? 'disabled' : ''; ?>>
+                        <i class="bi bi-list-check" aria-hidden="true"></i> Elegir anormalidades
+                    </button>
+                    <span id="germAnormalidadesResumen" class="text-muted" aria-live="polite">
+                        <?php
+                        $seleccionadas = array_column(array_filter($anormalidadesOptions, static fn(array $opcion): bool => in_array((int) $opcion['id_anormalidad'], $boletinGerminacionForm['id_anormalidades'], true)), 'etiqueta');
+                        echo htmlspecialchars($seleccionadas !== [] ? implode(', ', $seleccionadas) : 'Ninguna seleccionada', ENT_QUOTES, 'UTF-8');
+                        ?>
+                    </span>
+                </div>
+                <div class="modal fade" id="germAnormalidadesModal" tabindex="-1" aria-labelledby="germAnormalidadesModalTitle" aria-hidden="true">
+                    <div class="modal-dialog modal-dialog-scrollable">
+                        <div class="modal-content bg-dark text-light">
+                            <div class="modal-header">
+                                <h5 class="modal-title" id="germAnormalidadesModalTitle">Elegir anormalidades</h5>
+                                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Cerrar"></button>
+                            </div>
+                            <div class="modal-body">
+                                <?php if ($anormalidadesOptions === []): ?>
+                                    <p class="text-muted mb-0">No hay anormalidades cargadas para este laboratorio.</p>
+                                <?php endif; ?>
+                                <?php $categoriaAnterior = null; ?>
+                                <?php foreach ($anormalidadesOptions as $opcion): ?>
+                                    <?php if ($categoriaAnterior !== $opcion['categoria_principal']): ?>
+                                        <?php $categoriaAnterior = $opcion['categoria_principal']; ?>
+                                        <h6 class="mt-3"><?php echo htmlspecialchars((string) $categoriaAnterior, ENT_QUOTES, 'UTF-8'); ?></h6>
+                                    <?php endif; ?>
+                                    <?php $idAnormalidad = (int) $opcion['id_anormalidad']; ?>
+                                    <div class="form-check mb-2">
+                                        <input class="form-check-input germ-anormalidad-check" type="checkbox" name="id_anormalidades[]" id="germ_anormalidad_<?php echo $idAnormalidad; ?>" value="<?php echo $idAnormalidad; ?>"
+                                            data-etiqueta="<?php echo htmlspecialchars((string) $opcion['etiqueta'], ENT_QUOTES, 'UTF-8'); ?>"
+                                            <?php echo in_array($idAnormalidad, $boletinGerminacionForm['id_anormalidades'], true) ? 'checked' : ''; ?>>
+                                        <label class="form-check-label" for="germ_anormalidad_<?php echo $idAnormalidad; ?>"><?php echo htmlspecialchars((string) $opcion['etiqueta'], ENT_QUOTES, 'UTF-8'); ?></label>
+                                    </div>
+                                <?php endforeach; ?>
+                            </div>
+                            <div class="modal-footer">
+                                <button type="button" class="btn btn-brand" data-bs-dismiss="modal">Aceptar</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        <?php endif; ?>
+
         <div class="col-12">
             <label for="germ_observaciones" class="form-label">Observaciones</label>
             <textarea class="form-control" id="germ_observaciones" name="observaciones" rows="3"><?php echo htmlspecialchars($boletinGerminacionForm['observaciones'], ENT_QUOTES, 'UTF-8'); ?></textarea>
         </div>
         <div class="col-12 d-flex gap-2">
-            <button type="submit" class="btn btn-brand"><?php echo $boletinGerminacionEditId !== null ? 'Guardar cambios' : 'Guardar boletín'; ?></button>
+            <button type="submit" class="btn btn-brand" <?php echo !$anormalidadesDisponibles ? 'disabled' : ''; ?>><?php echo $boletinGerminacionEditId !== null ? 'Guardar cambios' : 'Guardar boletín'; ?></button>
             <?php if ($boletinGerminacionEditId !== null): ?>
                 <a href="/index.php?page=<?php echo htmlspecialchars($boletinGerminacionPagina, ENT_QUOTES, 'UTF-8'); ?>#germinacion-listado" class="btn btn-outline-brand">Cancelar edición</a>
             <?php endif; ?>
@@ -429,6 +503,15 @@ try {
 
 <script>
     document.addEventListener('DOMContentLoaded', function() {
+        const checksAnormalidades = document.querySelectorAll('.germ-anormalidad-check');
+        const resumenAnormalidades = document.getElementById('germAnormalidadesResumen');
+        if (resumenAnormalidades) {
+            const actualizarAnormalidades = function() {
+                const nombres = Array.from(checksAnormalidades).filter(campo => campo.checked).map(campo => campo.dataset.etiqueta);
+                resumenAnormalidades.textContent = nombres.length ? nombres.join(', ') : 'Ninguna seleccionada';
+            };
+            checksAnormalidades.forEach(campo => campo.addEventListener('change', actualizarAnormalidades));
+        }
         const radios = document.querySelectorAll('input[name="pretratamiento_aplica"]');
         const detalles = document.querySelectorAll('.pretratamiento-detalle');
         if (!radios.length) return;

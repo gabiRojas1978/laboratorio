@@ -2,6 +2,43 @@
 
 declare(strict_types=1);
 
+function boletin_germinacion_leer_anormalidades(mixed $entrada): array
+{
+    if (!is_array($entrada)) {
+        throw new InvalidArgumentException('La selección de anormalidades no es válida.');
+    }
+    $ids = [];
+    foreach ($entrada as $valor) {
+        $id = filter_var($valor, FILTER_VALIDATE_INT, ['options' => ['min_range' => 1]]);
+        if ($id === false) {
+            throw new InvalidArgumentException('La selección de anormalidades no es válida.');
+        }
+        $ids[] = (int) $id;
+    }
+    return array_values(array_unique($ids));
+}
+
+function boletin_germinacion_guardar_anormalidades(PDO $conexion, int $boletinId, int $empresaId, array $ids): void
+{
+    if (!$conexion->inTransaction()) {
+        throw new LogicException('La selección de anormalidades requiere una transacción.');
+    }
+    $delete = $conexion->prepare('DELETE FROM boletin_germinacion_anormalidades WHERE id_boletin_germinacion = :id_boletin');
+    $delete->execute([':id_boletin' => $boletinId]);
+
+    $insert = $conexion->prepare(
+        'INSERT INTO boletin_germinacion_anormalidades (id_boletin_germinacion, id_anormalidad)
+         SELECT :id_boletin, id_anormalidad FROM anormalidades
+         WHERE id_anormalidad = :id_anormalidad AND id_empresa = :id_empresa'
+    );
+    foreach ($ids as $id) {
+        $insert->execute([':id_boletin' => $boletinId, ':id_anormalidad' => $id, ':id_empresa' => $empresaId]);
+        if ($insert->rowCount() !== 1) {
+            throw new InvalidArgumentException('Una o más anormalidades seleccionadas no pertenecen a la empresa activa.');
+        }
+    }
+}
+
 // El resultado final acumula las semillas clasificadas en ambos conteos.
 function calcular_boletin_germinacion(array $repeticiones): array
 {

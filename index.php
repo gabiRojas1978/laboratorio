@@ -8,6 +8,7 @@ require __DIR__ . '/includes/certificado_settings.php';
 require __DIR__ . '/includes/smtp_settings.php';
 require __DIR__ . '/includes/certificado_pdf.php';
 require __DIR__ . '/includes/navigation.php';
+require __DIR__ . '/includes/anormalidades.php';
 require __DIR__ . '/includes/boletin_peso_1000_semillas.php';
 require __DIR__ . '/includes/boletin_peso_1000_semillas_pdf.php';
 require __DIR__ . '/includes/boletin_tetrazolio.php';
@@ -68,6 +69,8 @@ $speciesForm = [
 $speciesEditId = null;
 $determinacionLibroForm = ['nombre_determinacion_libro' => '', 'costo' => '0.00'];
 $determinacionLibroEditId = null;
+$anormalidadForm = ['codigo' => '', 'etiqueta' => '', 'grupo_tipo' => '', 'categoria_principal' => '', 'subcategoria' => ''];
+$anormalidadEditId = null;
 $cultivarForm = [
     'id_especie' => '',
     'nombre_cultivar' => '',
@@ -248,6 +251,7 @@ $boletinGerminacionForm = [
     'temperatura_camara_tipo' => '',
     'temperatura_camara_otra' => '',
     'observaciones' => '',
+    'id_anormalidades' => [],
     'repeticiones' => [
         1 => ['semillas_sembradas' => '', 'primer_conteo_normales' => '', 'primer_conteo_anormales' => '', 'primer_conteo_duras' => '', 'primer_conteo_frescas' => '', 'primer_conteo_muertas' => '', 'segundo_conteo_normales' => '', 'segundo_conteo_anormales' => '', 'segundo_conteo_duras' => '', 'segundo_conteo_frescas' => '', 'segundo_conteo_muertas' => ''],
         2 => ['semillas_sembradas' => '', 'primer_conteo_normales' => '', 'primer_conteo_anormales' => '', 'primer_conteo_duras' => '', 'primer_conteo_frescas' => '', 'primer_conteo_muertas' => '', 'segundo_conteo_normales' => '', 'segundo_conteo_anormales' => '', 'segundo_conteo_duras' => '', 'segundo_conteo_frescas' => '', 'segundo_conteo_muertas' => ''],
@@ -274,6 +278,7 @@ $libroIngresoForm = [
 
 require __DIR__ . '/handlers/auth.php';
 require __DIR__ . '/handlers/configuracion.php';
+require __DIR__ . '/handlers/anormalidades.php';
 
 require __DIR__ . '/handlers/empresas.php';
 

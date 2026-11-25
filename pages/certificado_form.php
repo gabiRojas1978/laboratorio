@@ -14,6 +14,12 @@ $certTiposPorPagina = [
     'CertificadoTetrazolio' => 'certificadotetrazolio',
 ];
 $certTipoActual = $certTiposPorPagina[$page] ?? 'certificadogeneral';
+if (!isset($_SESSION['certificado_delete_token'])) {
+    $_SESSION['certificado_delete_token'] = bin2hex(random_bytes(32));
+}
+$certDeleteQuery = array_intersect_key($_GET, array_flip(['page', 'filtro_cliente', 'filtro_especie', 'filtro_fecha_desde', 'filtro_fecha_hasta', 'cert_page']));
+$certDeleteQuery['page'] = $page;
+$certDeleteAction = '/index.php?' . http_build_query($certDeleteQuery) . '#certificados-listado';
 
 try {
     $clientesOptionsStatement = db()->prepare('SELECT id_cliente, nombre_cliente FROM clientes WHERE id_empresa = :id_empresa ORDER BY nombre_cliente ASC');
@@ -553,6 +559,15 @@ try {
     <h2>Certificados cargados</h2>
     <p>Listado de certificados guardados en la base de datos.</p>
 
+    <?php if (isset($_POST['delete_certificado'])): ?>
+        <?php foreach ($errors as $error): ?>
+            <div class="alert alert-danger"><?php echo htmlspecialchars($error, ENT_QUOTES, 'UTF-8'); ?></div>
+        <?php endforeach; ?>
+    <?php endif; ?>
+    <?php if ($successMessage === 'Certificado eliminado correctamente.'): ?>
+        <div class="alert alert-success"><?php echo htmlspecialchars($successMessage, ENT_QUOTES, 'UTF-8'); ?></div>
+    <?php endif; ?>
+
     <form method="get" class="row g-3 mb-3" action="/index.php#certificados-listado">
         <input type="hidden" name="page" value="<?php echo htmlspecialchars($page, ENT_QUOTES, 'UTF-8'); ?>">
 
@@ -633,6 +648,12 @@ try {
                                     class="btn btn-sm btn-outline-light">
                                     <i class="bi bi-file-earmark-pdf"></i> PDF
                                 </a>
+                                <form method="post" action="<?php echo htmlspecialchars($certDeleteAction, ENT_QUOTES, 'UTF-8'); ?>" class="d-inline" onsubmit="return confirm('¿Eliminar este certificado y su PDF? Esta acción no se puede deshacer.');">
+                                    <input type="hidden" name="delete_certificado" value="1">
+                                    <input type="hidden" name="certificado_delete_id" value="<?php echo (int) $certificado['id_certificado']; ?>">
+                                    <input type="hidden" name="certificado_delete_token" value="<?php echo htmlspecialchars($_SESSION['certificado_delete_token'], ENT_QUOTES, 'UTF-8'); ?>">
+                                    <button type="submit" class="btn btn-sm btn-outline-danger" aria-label="Eliminar certificado <?php echo (int) $certificado['id_certificado']; ?>"><i class="bi bi-trash"></i> Eliminar</button>
+                                </form>
                             </td>
                         </tr>
                     <?php endforeach; ?>

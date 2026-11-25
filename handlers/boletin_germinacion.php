@@ -228,6 +228,14 @@ if (is_logged_in() && $_SERVER['REQUEST_METHOD'] === 'POST' && (isset($_POST['sa
         $boletinGerminacionForm['pretratamiento_prelavado'] = false;
     }
 
+    if ($boletinGerminacionTipo === 'germinacion') {
+        try {
+            $boletinGerminacionForm['id_anormalidades'] = boletin_germinacion_leer_anormalidades($_POST['id_anormalidades'] ?? []);
+        } catch (InvalidArgumentException $exception) {
+            $errors[] = $exception->getMessage();
+        }
+    }
+
     [$repeticionesForm, $repeticionesData, $huboErrorRepeticiones, $erroresRepeticiones] = leer_repeticiones_boletin_germinacion((array) ($_POST['repeticiones'] ?? []));
     $boletinGerminacionForm['repeticiones'] = $repeticionesForm;
     if ($huboErrorRepeticiones) {
@@ -440,6 +448,10 @@ if (is_logged_in() && $_SERVER['REQUEST_METHOD'] === 'POST' && (isset($_POST['sa
                 ]);
             }
 
+            if ($boletinGerminacionTipo === 'germinacion') {
+                boletin_germinacion_guardar_anormalidades(db(), (int) $boletinId, current_empresa_id(), $boletinGerminacionForm['id_anormalidades']);
+            }
+
             if ($ingresoAsociadoId !== null && $ingresoAsociadoId !== false) {
                 libro_ingreso_vincular_boletin((int) $ingresoAsociadoId, $boletinGerminacionPagina, (int) $boletinId);
             }
@@ -449,6 +461,11 @@ if (is_logged_in() && $_SERVER['REQUEST_METHOD'] === 'POST' && (isset($_POST['sa
             $_SESSION['success_message'] = 'Boletín de ' . $boletinGerminacionTitulo . ($esActualizacion ? ' actualizado correctamente.' : ' guardado correctamente.');
             header('Location: /index.php?page=' . urlencode($boletinGerminacionPagina));
             exit;
+        } catch (InvalidArgumentException $exception) {
+            if (db()->inTransaction()) {
+                db()->rollBack();
+            }
+            $errors[] = $exception->getMessage();
         } catch (Throwable $throwable) {
             if (db()->inTransaction()) {
                 db()->rollBack();

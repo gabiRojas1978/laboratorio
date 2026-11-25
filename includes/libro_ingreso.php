@@ -218,7 +218,7 @@ function libro_ingreso_buscar_boletin_legacy(string $pagina, array $ingreso): in
         'boletin_pureza' => [
             'SELECT id_boletin_pureza FROM boletines_pureza
              WHERE id_empresa = :id_empresa AND id_cliente = :id_cliente AND id_especie = :id_especie AND analisis_nro = :analisis_nro',
-            $parametros + [':analisis_nro' => libro_ingreso_nro_inase_formateado((int) $ingreso['nro_inase'])],
+            array_diff_key($parametros, [':muestra' => true]) + [':analisis_nro' => libro_ingreso_nro_inase_formateado((int) $ingreso['nro_inase'])],
         ],
         'boletin_malezas' => [
             'SELECT id_boletin_malezas FROM boletines_malezas

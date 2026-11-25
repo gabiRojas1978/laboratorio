@@ -19,6 +19,11 @@ $smtpSettings = get_smtp_settings(current_empresa_id());
         <div class="alert alert-success"><?php echo htmlspecialchars($successMessage, ENT_QUOTES, 'UTF-8'); ?></div>
     <?php endif; ?>
 
+    <div class="mt-3">
+        <a href="/index.php?page=anormalidades" class="btn btn-outline-brand">Administrar anormalidades</a>
+        <p class="form-text">Alta y edición del catálogo de anormalidades de este laboratorio.</p>
+    </div>
+
     <form method="post" enctype="multipart/form-data" class="row g-3 mt-1">
         <input type="hidden" name="save_logo_certificado" value="1">
         <div class="col-md-8">

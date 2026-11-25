@@ -15,7 +15,11 @@ function db(): object
     return new class {
         public function prepare(string $sql): object
         {
-            return new class {
+            return new class($sql) {
+                public function __construct(private string $sql)
+                {
+                }
+
                 public function execute(array $params): void
                 {
                 }
@@ -25,8 +29,14 @@ function db(): object
                     return $GLOBALS['boletinPdfPrueba'];
                 }
 
-                public function fetchAll(): array
+                public function fetchAll(int $mode = PDO::FETCH_DEFAULT): array
                 {
+                    if (str_contains($this->sql, 'boletin_germinacion_anormalidades')) {
+                        if ($mode !== PDO::FETCH_COLUMN || !str_contains($this->sql, 'a.id_empresa = :id_empresa')) {
+                            throw new RuntimeException('La consulta de anormalidades debe limitarse a la empresa activa.');
+                        }
+                        return $GLOBALS['anormalidadesPdfPrueba'] ?? [];
+                    }
                     return $GLOBALS['repeticionesPdfPrueba'];
                 }
             };
@@ -91,6 +101,22 @@ foreach (['germinacion', 'cold_test', 'envejecimiento_acelerado'] as $tipoBoleti
             }
         }
     }
+}
+
+$anormalidadesPdfPrueba = ['00/01 Plántula <deforme>', '11/02 Raíz dañada'];
+$htmlAnormalidades = boletin_germinacion_anormalidades_pdf_html($anormalidadesPdfPrueba);
+if (!str_contains($htmlAnormalidades, '00/01 Plántula &lt;deforme&gt;') || !str_contains($htmlAnormalidades, '11/02 Raíz dañada')
+    || boletin_germinacion_anormalidades_pdf_html([]) !== '') {
+    throw new RuntimeException('Las anormalidades deben imprimirse completas y escapadas, solo cuando existen.');
+}
+$resultado = build_boletin_germinacion_pdf(1, 'germinacion');
+if ($resultado === null || !str_starts_with($resultado['content'], '%PDF-')) {
+    throw new RuntimeException('Debe generarse el PDF con varias anormalidades.');
+}
+$anormalidadesPdfPrueba = array_map(static fn(int $i): string => 'Anormalidad ' . $i . ' con descripción de prueba', range(1, 71));
+$resultado = build_boletin_germinacion_pdf(1, 'germinacion');
+if ($resultado === null || preg_match_all('/\/Type\s*\/Page\b/', $resultado['content']) < 2) {
+    throw new RuntimeException('Una lista extensa de anormalidades debe poder continuar en otra página.');
 }
 
 echo "OK: PDFs A4 de una hoja para los tres tipos, en ambos estados y con ocho lineas de observaciones.\n";

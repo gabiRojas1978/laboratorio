@@ -2,6 +2,19 @@
 
 declare(strict_types=1);
 
+function boletin_germinacion_anormalidades_pdf_html(array $anormalidades): string
+{
+    if ($anormalidades === []) {
+        return '';
+    }
+
+    $html = '<div class="anormalidades"><strong>Anormalidades</strong></div>';
+    foreach ($anormalidades as $etiqueta) {
+        $html .= '<div class="anormalidad">' . htmlspecialchars((string) $etiqueta, ENT_QUOTES, 'UTF-8') . '</div>';
+    }
+    return $html;
+}
+
 function build_boletin_germinacion_pdf(int $boletinId, string $tipoBoletin = 'germinacion'): ?array
 {
     $titulos = [
@@ -36,6 +49,17 @@ function build_boletin_germinacion_pdf(int $boletinId, string $tipoBoletin = 'ge
         );
         $repeticionesStatement->execute([':id_boletin_germinacion' => $boletinId]);
         $repeticiones = $repeticionesStatement->fetchAll();
+        $anormalidades = [];
+        if ($tipoBoletin === 'germinacion') {
+            $anormalidadesStatement = db()->prepare(
+                'SELECT a.etiqueta FROM boletin_germinacion_anormalidades ba
+                 INNER JOIN anormalidades a ON a.id_anormalidad = ba.id_anormalidad AND a.id_empresa = :id_empresa
+                 WHERE ba.id_boletin_germinacion = :id_boletin
+                 ORDER BY a.codigo'
+            );
+            $anormalidadesStatement->execute([':id_empresa' => current_empresa_id(), ':id_boletin' => $boletinId]);
+            $anormalidades = $anormalidadesStatement->fetchAll(PDO::FETCH_COLUMN);
+        }
     } catch (Throwable $throwable) {
         return null;
     }
@@ -104,6 +128,8 @@ function build_boletin_germinacion_pdf(int $boletinId, string $tipoBoletin = 'ge
         .status { margin-top: 2mm; font-weight: bold; }
         .status.ok { color: #1e6b2e; }
         .status.pending { color: #8a6500; }
+        .anormalidades { margin-top: 2mm; }
+        .anormalidad { margin-left: 2mm; }
         .notes { margin-top: 2mm; }
         .notes th { background: #ddd; text-align: center; padding: 1.2mm 2mm; }
         .notes td { height: 12mm; vertical-align: top; padding: 1.2mm 2mm; }
@@ -187,6 +213,7 @@ function build_boletin_germinacion_pdf(int $boletinId, string $tipoBoletin = 'ge
             </tr>
         </table>
         <div class="status ' . ($esFinalizado ? 'ok' : 'pending') . '">Estado: ' . ($esFinalizado ? 'Finalizado (2do conteo completo)' : 'En proceso (pendiente 2do conteo)') . '</div>
+        ' . boletin_germinacion_anormalidades_pdf_html($anormalidades) . '
         <table class="notes"><tr><th>Observaciones</th></tr><tr><td>' . nl2br($escape($boletin['observaciones'] ?? '')) . '</td></tr></table>
     </body></html>';
 

@@ -2,6 +2,68 @@
 
 declare(strict_types=1);
 
+if (is_logged_in() && $_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['delete_certificado'])) {
+    $tiposCertificado = [
+        'Certificadogeneral' => 'certificadogeneral',
+        'CertificadoINASE' => 'certificadoinase',
+        'CertificadoTetrazolio' => 'certificadotetrazolio',
+    ];
+    $paginaCertificado = $_GET['page'] ?? '';
+    $idEliminar = filter_var($_POST['certificado_delete_id'] ?? '', FILTER_VALIDATE_INT, ['options' => ['min_range' => 1]]);
+    $token = $_POST['certificado_delete_token'] ?? null;
+
+    if (!is_string($paginaCertificado) || !isset($tiposCertificado[$paginaCertificado]) || $idEliminar === false) {
+        $errors[] = 'El certificado a eliminar no es válido.';
+    } elseif (!is_string($token) || !isset($_SESSION['certificado_delete_token'])
+        || !hash_equals($_SESSION['certificado_delete_token'], $token)) {
+        $errors[] = 'La solicitud de eliminación no es válida. Recarga la página e inténtalo nuevamente.';
+    } else {
+        try {
+            $conexion = db();
+            $conexion->beginTransaction();
+            $statement = $conexion->prepare(
+                'SELECT id_certificado FROM certificados
+                 WHERE id_certificado = :id AND id_empresa = :id_empresa AND tipo_certificado = :tipo FOR UPDATE'
+            );
+            $statement->execute([
+                ':id' => $idEliminar,
+                ':id_empresa' => current_empresa_id(),
+                ':tipo' => $tiposCertificado[$paginaCertificado],
+            ]);
+            if ($statement->fetchColumn() === false) {
+                $conexion->rollBack();
+                $errors[] = 'El certificado no existe o no pertenece a este laboratorio y tipo.';
+            } else {
+                $statement = $conexion->prepare('DELETE FROM certificado_determinaciones WHERE id_certificado = :id');
+                $statement->execute([':id' => $idEliminar]);
+                $statement = $conexion->prepare(
+                    'DELETE FROM certificados WHERE id_certificado = :id AND id_empresa = :id_empresa AND tipo_certificado = :tipo'
+                );
+                $statement->execute([
+                    ':id' => $idEliminar,
+                    ':id_empresa' => current_empresa_id(),
+                    ':tipo' => $tiposCertificado[$paginaCertificado],
+                ]);
+                $pdfPath = empresa_storage_dir(current_empresa_id()) . DIRECTORY_SEPARATOR . 'certificado_' . $idEliminar . '.pdf';
+                if (file_exists($pdfPath) && !@unlink($pdfPath)) {
+                    throw new RuntimeException('No se pudo eliminar el archivo PDF del certificado.');
+                }
+                $conexion->commit();
+                $_SESSION['success_message'] = 'Certificado eliminado correctamente.';
+                $query = array_intersect_key($_GET, array_flip(['page', 'filtro_cliente', 'filtro_especie', 'filtro_fecha_desde', 'filtro_fecha_hasta', 'cert_page']));
+                header('Location: /index.php?' . http_build_query($query) . '#certificados-listado');
+                exit;
+            }
+        } catch (PDOException | RuntimeException $exception) {
+            if (isset($conexion) && $conexion->inTransaction()) {
+                $conexion->rollBack();
+            }
+            error_log('Error al eliminar certificado: ' . $exception->getMessage());
+            $errors[] = 'No fue posible eliminar el certificado o su PDF. Inténtalo nuevamente.';
+        }
+    }
+}
+
 if (is_logged_in() && $_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['save_certificado'])) {
     $tipoCertificadoPost = trim((string) ($_POST['tipo_certificado'] ?? ''));
     $certForm['tipo_certificado'] = in_array($tipoCertificadoPost, ['certificadogeneral', 'certificadoinase', 'certificadotetrazolio'], true)
