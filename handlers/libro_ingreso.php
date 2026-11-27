@@ -274,7 +274,7 @@ if (is_logged_in() && $_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['upd
                     'ubicacion_camara_archivo' => '',
                 ];
 
-                header('Location: /index.php?page=libro_ingreso' . ($esActualizacion ? '' : '&presupuesto_id=' . $nuevoLibroIngresoId . '#presupuesto'));
+                header('Location: /index.php?page=libro_ingreso');
                 exit;
             } catch (Throwable $throwable) {
                 if (db()->inTransaction()) {

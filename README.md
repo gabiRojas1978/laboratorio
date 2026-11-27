@@ -72,9 +72,13 @@ La prueba `php tests/certificado_tetrazolio_pdf_test.php` verifica su impresión
 
 ## Presupuestos del libro de ingreso
 
-Al guardar un ingreso se ofrece revisar y enviar un presupuesto en PDF. También
-puede abrirse desde **Presupuesto** en el listado de ingresos. Incluye las
-determinaciones seleccionadas y sus precios vigentes al generar o enviar el PDF,
+En el listado de ingresos, marcar las muestras de un mismo cliente y elegir
+**Revisar y enviar presupuesto** para revisar y enviar un PDF conjunto. El listado
+puede filtrarse por cliente y por rango de fechas de entrada antes de seleccionar.
+Se muestra cada
+muestra con sus determinaciones, subtotal y el total general. Cada muestra debe
+tener determinaciones; se pueden seleccionar una o varias muestras. El presupuesto incluye
+los precios vigentes al generar o enviar el PDF,
 en pesos argentinos y sin agregar impuestos. El envío no guarda una copia histórica;
 si cambian los precios o el ingreso, un presupuesto posterior reflejará esos cambios.
 Los costos se administran en **Determinaciones del Libro de Ingreso**; un costo
