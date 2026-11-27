@@ -28,6 +28,31 @@ $libroIngresos = [];
 $libroIngresoEdit = null;
 $libroIngresoEditId = $libroIngresoEditId ?? null;
 $libroBoletinesVinculados = [];
+$presupuestoVista = null;
+$presupuestoEmails = [];
+$presupuestoId = null;
+if (isset($_GET['presupuesto_id'])) {
+    $presupuestoId = filter_var($_GET['presupuesto_id'], FILTER_VALIDATE_INT, ['options' => ['min_range' => 1]]);
+    if ($presupuestoId === false) {
+        $errors[] = 'El ingreso para el presupuesto no es válido.';
+        $presupuestoId = null;
+    } else {
+        try {
+            $presupuestoVista = presupuesto_obtener($presupuestoId);
+            if ($presupuestoVista === null) {
+                $errors[] = 'El ingreso para el presupuesto no existe.';
+            } else {
+                $presupuestoEmails = $presupuestoVista['emails_cliente'];
+                if (!isset($_SESSION['presupuesto_token'])) {
+                    $_SESSION['presupuesto_token'] = bin2hex(random_bytes(32));
+                }
+            }
+        } catch (PDOException | RuntimeException $exception) {
+            error_log('Error al cargar presupuesto: ' . $exception->getMessage());
+            $errors[] = 'No se pudo cargar el presupuesto. Verifica los datos del ingreso y sus determinaciones.';
+        }
+    }
+}
 
 try {
     $statement = db()->prepare('SELECT id_cliente, nombre_cliente FROM clientes WHERE id_empresa = :id_empresa ORDER BY nombre_cliente ASC');
@@ -149,16 +174,70 @@ try {
     $libroProximoInase = null;
 }
 ?>
+<?php if ($presupuestoVista !== null): ?>
+<section class="section-panel" id="presupuesto">
+    <h2>Presupuesto de la muestra <?php echo htmlspecialchars((string) $presupuestoVista['ingreso']['nro_muestra'], ENT_QUOTES, 'UTF-8'); ?></h2>
+    <p>Cliente: <?php echo htmlspecialchars((string) $presupuestoVista['ingreso']['nombre_cliente'], ENT_QUOTES, 'UTF-8'); ?>.
+        Se usarán los precios vigentes al enviar, en pesos argentinos, sin agregar impuestos.</p>
+    <?php foreach ($errors as $error): ?>
+        <div class="alert alert-danger"><?php echo htmlspecialchars($error, ENT_QUOTES, 'UTF-8'); ?></div>
+    <?php endforeach; ?>
+    <?php if ($successMessage !== null): ?>
+        <div class="alert alert-success"><?php echo htmlspecialchars($successMessage, ENT_QUOTES, 'UTF-8'); ?></div>
+    <?php endif; ?>
+    <?php if ($presupuestoVista['determinaciones'] === []): ?>
+        <div class="alert alert-warning">Este ingreso no tiene determinaciones. Edita el ingreso para agregarlas.</div>
+    <?php else: ?>
+        <div class="table-responsive"><table class="table table-dark table-striped">
+            <thead><tr><th>Determinación</th><th>Precio</th></tr></thead>
+            <tbody>
+                <?php foreach ($presupuestoVista['determinaciones'] as $determinacion): ?>
+                    <tr><td><?php echo htmlspecialchars($determinacion['nombre_determinacion_libro'], ENT_QUOTES, 'UTF-8'); ?></td><td><?php echo presupuesto_importe($determinacion['centavos']); ?></td></tr>
+                <?php endforeach; ?>
+                <tr><th>Total</th><th><?php echo presupuesto_importe($presupuestoVista['total_centavos']); ?></th></tr>
+            </tbody>
+        </table></div>
+        <?php $datosLaboratorioPresupuesto = get_certificate_settings(current_empresa_id()); ?>
+        <?php if (certificate_logo_path(current_empresa_id()) === null || trim($datosLaboratorioPresupuesto['nombre_laboratorio']) === ''): ?>
+            <div class="alert alert-warning">Configura el nombre y el logo del laboratorio en <a href="/index.php?page=configuracion">Configuración</a> antes de generar o enviar el presupuesto.</div>
+        <?php else: ?>
+            <p><a class="btn btn-outline-light" href="/index.php?presupuesto_pdf=<?php echo $presupuestoId; ?>" target="_blank" rel="noopener noreferrer">Ver presupuesto PDF</a></p>
+        <?php endif; ?>
+        <?php if (in_array('', array_intersect_key($datosLaboratorioPresupuesto, array_flip(['direccion_laboratorio', 'telefono_laboratorio', 'email_laboratorio', 'cuit_laboratorio'])), true)): ?>
+            <div class="alert alert-warning">Completa la dirección, teléfono, correo y CUIT del laboratorio en <a href="/index.php?page=configuracion">Configuración</a> para incluirlos en la cabecera.</div>
+        <?php endif; ?>
+        <?php if ($presupuestoEmails === []): ?>
+            <div class="alert alert-warning">El cliente no tiene correos registrados. Agrega uno en <a href="/index.php?page=clientes">Clientes</a> para enviar el presupuesto.</div>
+        <?php else: ?>
+            <form method="post" action="/index.php?page=libro_ingreso&amp;presupuesto_id=<?php echo $presupuestoId; ?>#presupuesto">
+                <input type="hidden" name="enviar_presupuesto" value="1">
+                <input type="hidden" name="ingreso_id" value="<?php echo $presupuestoId; ?>">
+                <input type="hidden" name="presupuesto_token" value="<?php echo htmlspecialchars($_SESSION['presupuesto_token'], ENT_QUOTES, 'UTF-8'); ?>">
+                <p>Selecciona los destinatarios:</p>
+                <?php foreach ($presupuestoEmails as $indice => $email): ?>
+                    <div class="form-check">
+                        <input class="form-check-input" type="checkbox" name="destinatarios[]" id="presupuesto_email_<?php echo $indice; ?>" value="<?php echo htmlspecialchars($email, ENT_QUOTES, 'UTF-8'); ?>" checked>
+                        <label class="form-check-label" for="presupuesto_email_<?php echo $indice; ?>"><?php echo htmlspecialchars($email, ENT_QUOTES, 'UTF-8'); ?></label>
+                    </div>
+                <?php endforeach; ?>
+                <button class="btn btn-brand mt-3" type="submit">Enviar presupuesto por email</button>
+            </form>
+        <?php endif; ?>
+    <?php endif; ?>
+    <a class="btn btn-outline-brand mt-3" href="/index.php?page=libro_ingreso">Volver al libro de ingreso</a>
+</section>
+<?php endif; ?>
 <section class="section-panel" id="ingreso-form">
     <h2><?php echo $libroIngresoEditId !== null ? 'Ver / editar ingreso' : 'Libro de Ingreso'; ?></h2>
     <p><?php echo $libroIngresoEditId !== null ? 'Revisa el ingreso completo y guarda los cambios. El N° INASE y el N° de muestra no se pueden modificar.' : 'Registro de las muestras recibidas. El N° INASE y el N° de muestra se asignan automáticamente al guardar.'; ?></p>
 
-    <?php foreach ($errors as $error): ?>
-        <div class="alert alert-danger"><?php echo htmlspecialchars($error, ENT_QUOTES, 'UTF-8'); ?></div>
-    <?php endforeach; ?>
-
-    <?php if ($successMessage !== null): ?>
-        <div class="alert alert-success"><?php echo htmlspecialchars($successMessage, ENT_QUOTES, 'UTF-8'); ?></div>
+    <?php if ($presupuestoVista === null): ?>
+        <?php foreach ($errors as $error): ?>
+            <div class="alert alert-danger"><?php echo htmlspecialchars($error, ENT_QUOTES, 'UTF-8'); ?></div>
+        <?php endforeach; ?>
+        <?php if ($successMessage !== null): ?>
+            <div class="alert alert-success"><?php echo htmlspecialchars($successMessage, ENT_QUOTES, 'UTF-8'); ?></div>
+        <?php endif; ?>
     <?php endif; ?>
 
     <?php if (($libroIngresoEditId !== null || isset($_GET['editar'])) && $libroIngresoEdit === null): ?>
@@ -401,6 +480,7 @@ try {
                                 <a class="btn btn-sm btn-brand libro-ingreso-accion mt-1"
                                         href="<?php echo htmlspecialchars($certificadoHref, ENT_QUOTES, 'UTF-8'); ?>"
                                     aria-label="Precargar certificado de la muestra <?php echo htmlspecialchars((string) $ingreso['nro_muestra'], ENT_QUOTES, 'UTF-8'); ?>">CERT</a>
+                                <a class="btn btn-sm btn-outline-light mt-1" href="/index.php?page=libro_ingreso&amp;presupuesto_id=<?php echo (int) $ingreso['id_libro_ingreso']; ?>#presupuesto">Presupuesto</a>
                             </td>
                         </tr>
                     <?php endforeach; ?>

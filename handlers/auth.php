@@ -8,9 +8,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['login'])) {
 
     try {
         $userStatement = db()->prepare(
-            'SELECT u.id_usuario, u.nombre_usuario, u.username_usuario, u.password_hash_usuario, u.activo_usuario, u.es_superadmin, u.id_empresa, e.activo_empresa, e.nombre_empresa
+            'SELECT u.id_usuario, u.nombre_usuario, u.username_usuario, u.password_hash_usuario, u.activo_usuario, u.es_superadmin, u.id_empresa, u.tipo_usuario, u.id_cliente_usuario, cl.id_cliente AS cliente_valido, e.activo_empresa, e.nombre_empresa
             FROM usuarios u
             INNER JOIN empresas e ON e.id_empresa = u.id_empresa
+            LEFT JOIN clientes cl ON cl.id_cliente = u.id_cliente_usuario AND cl.id_empresa = u.id_empresa
             WHERE u.username_usuario = :username LIMIT 1'
         );
         $userStatement->execute([':username' => $username]);
@@ -20,6 +21,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['login'])) {
             $userRow !== false
             && (int) $userRow['activo_usuario'] === 1
             && (int) $userRow['activo_empresa'] === 1
+            && ($userRow['tipo_usuario'] === 'interno' || ($userRow['tipo_usuario'] === 'cliente' && $userRow['cliente_valido'] !== null))
             && password_verify($password, $userRow['password_hash_usuario'])
         ) {
             session_regenerate_id(true);
@@ -29,7 +31,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['login'])) {
                 'name' => $userRow['nombre_usuario'],
                 'id_empresa' => (int) $userRow['id_empresa'],
                 'empresa_nombre' => $userRow['nombre_empresa'],
-                'es_superadmin' => (bool) $userRow['es_superadmin'],
+                'es_superadmin' => $userRow['tipo_usuario'] === 'interno' && (bool) $userRow['es_superadmin'],
+                'tipo_usuario' => $userRow['tipo_usuario'],
+                'id_cliente' => $userRow['id_cliente_usuario'] === null ? null : (int) $userRow['id_cliente_usuario'],
             ];
             header('Location: /index.php');
             exit;

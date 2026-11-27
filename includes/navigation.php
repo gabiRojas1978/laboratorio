@@ -12,6 +12,7 @@ $navigation = [
             'cultivares' => 'Cultivares',
             'otras_determinaciones' => 'Otras Determinaciones',
             'usuarios' => 'Usuarios',
+            'portal_clientes' => 'Documentos del portal',
             'configuracion' => 'Configuración',
         ],
     ],
@@ -61,6 +62,7 @@ $pageMap = [
     'cultivares' => ['title' => 'Cultivares', 'subtitle' => 'Registro de cultivares'],
     'otras_determinaciones' => ['title' => 'Otras Determinaciones', 'subtitle' => 'Parámetros auxiliares'],
     'usuarios' => ['title' => 'Usuarios', 'subtitle' => 'Gestión de usuarios del sistema'],
+    'portal_clientes' => ['title' => 'Portal de clientes', 'subtitle' => 'Boletines y certificados'],
     'configuracion' => ['title' => 'Configuración', 'subtitle' => 'Preferencias del sistema'],
     'anormalidades' => ['title' => 'Anormalidades', 'subtitle' => 'Catálogo de anormalidades del laboratorio'],
     'libro_ingreso' => ['title' => 'Libro de Ingreso', 'subtitle' => 'Registro de muestras recibidas'],
@@ -88,6 +90,7 @@ $pageTemplates = [
     'cultivares' => 'cultivares.php',
     'otras_determinaciones' => 'otras_determinaciones.php',
     'usuarios' => 'usuarios.php',
+    'portal_clientes' => 'portal_clientes.php',
     'configuracion' => 'configuracion.php',
     'anormalidades' => 'anormalidades.php',
     'empresas' => 'empresas.php',
@@ -105,3 +108,7 @@ $pageTemplates = [
     'CertificadoINASE' => 'certificado_form.php',
     'CertificadoTetrazolio' => 'certificado_form.php',
 ];
+
+if (function_exists('is_client_user') && is_client_user()) {
+    $navigation = ['portal' => ['label' => 'Mis documentos', 'items' => ['portal_clientes' => 'Boletines y certificados']]];
+}

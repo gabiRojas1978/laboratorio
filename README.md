@@ -26,6 +26,37 @@ Proyecto base en PHP 8 con Bootstrap para un laboratorio de semillas.
 - Usuario: `admin`
 - Contraseña: `admin123`
 
+## Portal de clientes
+
+Aplicar una sola vez
+[2026-11-25_portal_clientes.sql](database/migrations/2026-11-25_portal_clientes.sql)
+antes de desplegar el código del portal. Los usuarios existentes quedan como
+**Internos**, sin cambiar sus permisos actuales.
+
+En **Usuarios**, elegir **Cliente** y asociar la cuenta a un cliente del
+laboratorio. Se pueden crear varias cuentas para el mismo cliente. Ingresan por
+el mismo login y solo acceden a **Mis boletines y certificados**, con consulta y
+descarga de PDF, sin operaciones administrativas. Desactivar la cuenta, eliminarla
+o quitar su cliente impide el acceso también en sesiones ya iniciadas.
+
+En **Administración → Documentos del portal**, filtrar por tipo y cliente,
+revisar el PDF y pulsar **Habilitar para cliente**. Ningún documento se publica
+automáticamente. **Retirar del portal** quita su disponibilidad sin borrar el
+original. Se incluyen los ocho tipos de boletines y los tres certificados.
+Las publicaciones usan el documento actual: una edición posterior se refleja
+en el PDF; retirar del portal antes de editar si requiere una nueva revisión.
+Si cambia el cliente del documento, su visibilidad sigue al cliente actual.
+Las copias ya descargadas no se pueden retirar.
+
+El servidor debe impedir el acceso HTTP directo a `storage/` (la regla Apache
+ya está en `storage/.htaccess`). En Nginx u otro servidor, configurar la regla
+equivalente; el servidor PHP integrado no aplica `.htaccess` y no debe exponerse
+como portal público. Los PDF del portal se entregan mediante rutas autenticadas,
+comprobando laboratorio, cliente y publicación en cada solicitud.
+`php tests/portal_clientes_test.php` verifica cuentas, publicación, descargas y
+restricciones del portal. Requiere la base migrada y permiso para crear bases de
+prueba aisladas, que se eliminan al finalizar; no modifica los datos del laboratorio.
+
 ## Certificado general
 
 En los listados de certificados general, INASE y tetrazolio se puede eliminar un
@@ -38,6 +69,24 @@ firma del director técnico. Se guarda por laboratorio y se imprime en el
 recuadro de firma de los certificados, encima del texto configurado. La imagen
 puede reemplazarse o quitarse sin modificar ese texto.
 La prueba `php tests/certificado_tetrazolio_pdf_test.php` verifica su impresión.
+
+## Presupuestos del libro de ingreso
+
+Al guardar un ingreso se ofrece revisar y enviar un presupuesto en PDF. También
+puede abrirse desde **Presupuesto** en el listado de ingresos. Incluye las
+determinaciones seleccionadas y sus precios vigentes al generar o enviar el PDF,
+en pesos argentinos y sin agregar impuestos. El envío no guarda una copia histórica;
+si cambian los precios o el ingreso, un presupuesto posterior reflejará esos cambios.
+Los costos se administran en **Determinaciones del Libro de Ingreso**; un costo
+vacío se guarda como cero.
+
+En **Configuración** cargar el nombre y logo del laboratorio, además de dirección,
+teléfono, correo y CUIT para la cabecera. Para enviar, configurar SMTP y registrar
+los correos del cliente; se pueden seleccionar los destinatarios antes del envío.
+El nombre y el logo son necesarios para generar el PDF.
+`php tests/presupuesto_test.php` verifica el presupuesto y simula el correo sin
+enviarlo. Requiere permiso para crear una base de prueba aislada, que se elimina
+al finalizar.
 
 El Certificado general incluye **Hipoclorito max 10%**, **Peroxidasa** (positivas
 y negativas), **Contam. x hilo (250gr)** (cantidad de semillas y color contaminante)

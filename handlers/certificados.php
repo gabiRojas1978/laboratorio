@@ -576,22 +576,7 @@ if (is_logged_in() && $_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['env
     }
 
     try {
-        $mailer = new \PHPMailer\PHPMailer\PHPMailer(true);
-        $mailer->isSMTP();
-        $mailer->Host = $smtpSettings['host'];
-        $mailer->Port = (int) ($smtpSettings['port'] !== '' ? $smtpSettings['port'] : 587);
-        $mailer->SMTPAuth = true;
-        $mailer->Username = $smtpSettings['usuario'];
-        $mailer->Password = $smtpSettings['password'];
-        if ($smtpSettings['seguridad'] === 'ssl') {
-            $mailer->SMTPSecure = \PHPMailer\PHPMailer\PHPMailer::ENCRYPTION_SMTPS;
-        } elseif ($smtpSettings['seguridad'] === 'tls') {
-            $mailer->SMTPSecure = \PHPMailer\PHPMailer\PHPMailer::ENCRYPTION_STARTTLS;
-        } else {
-            $mailer->SMTPAutoTLS = false;
-        }
-        $mailer->CharSet = 'UTF-8';
-        $mailer->setFrom($smtpSettings['remitente_email'], $smtpSettings['remitente_nombre'] !== '' ? $smtpSettings['remitente_nombre'] : APP_NAME);
+        $mailer = smtp_create_mailer($smtpSettings);
         foreach ($destinatarios as $destinatario) {
             $mailer->addAddress($destinatario);
         }

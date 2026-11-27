@@ -52,6 +52,11 @@ function current_empresa_id(): int
     return (int) ($_SESSION['user']['id_empresa'] ?? 0);
 }
 
+function is_client_user(): bool
+{
+    return is_logged_in() && ($_SESSION['user']['tipo_usuario'] ?? '') === 'cliente';
+}
+
 function is_superadmin(): bool
 {
     return is_logged_in() && (bool) ($_SESSION['user']['es_superadmin'] ?? false);

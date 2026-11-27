@@ -8,6 +8,12 @@ if (is_logged_in() && $_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['sav
     $userForm['email_usuario'] = trim((string) ($_POST['email_usuario'] ?? ''));
     $userForm['activo_usuario'] = isset($_POST['activo_usuario']) ? '1' : '0';
     $userPassword = (string) ($_POST['password_usuario'] ?? '');
+    try {
+        portal_usuario_vinculo($userForm, $errors);
+    } catch (PDOException $exception) {
+        error_log('Error al validar usuario cliente: ' . $exception->getMessage());
+        $errors[] = 'No se pudo validar el cliente asociado.';
+    }
 
     if ($userForm['nombre_usuario'] === '') {
         $errors[] = 'El nombre del usuario es obligatorio.';
@@ -28,7 +34,7 @@ if (is_logged_in() && $_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['sav
     if (!$errors) {
         try {
             $statement = db()->prepare(
-                'INSERT INTO usuarios (id_empresa, nombre_usuario, username_usuario, email_usuario, password_hash_usuario, activo_usuario) VALUES (:id_empresa, :nombre_usuario, :username_usuario, :email_usuario, :password_hash_usuario, :activo_usuario)'
+                'INSERT INTO usuarios (id_empresa, nombre_usuario, username_usuario, email_usuario, password_hash_usuario, activo_usuario, tipo_usuario, id_cliente_usuario) VALUES (:id_empresa, :nombre_usuario, :username_usuario, :email_usuario, :password_hash_usuario, :activo_usuario, :tipo_usuario, :id_cliente_usuario)'
             );
             $statement->execute([
                 ':id_empresa' => current_empresa_id(),
@@ -37,11 +43,13 @@ if (is_logged_in() && $_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['sav
                 ':email_usuario' => $userForm['email_usuario'] !== '' ? $userForm['email_usuario'] : null,
                 ':password_hash_usuario' => password_hash($userPassword, PASSWORD_BCRYPT),
                 ':activo_usuario' => $userForm['activo_usuario'],
+                ':tipo_usuario' => $userForm['tipo_usuario'],
+                ':id_cliente_usuario' => $userForm['id_cliente_usuario'] !== '' ? (int) $userForm['id_cliente_usuario'] : null,
             ]);
 
             $successMessage = 'Usuario dado de alta correctamente.';
             $_SESSION['success_message'] = $successMessage;
-            $userForm = ['nombre_usuario' => '', 'username_usuario' => '', 'email_usuario' => '', 'activo_usuario' => '1'];
+            $userForm = ['nombre_usuario' => '', 'username_usuario' => '', 'email_usuario' => '', 'activo_usuario' => '1', 'tipo_usuario' => 'interno', 'id_cliente_usuario' => ''];
 
             if (($page ?? 'dashboard') !== 'usuarios') {
                 header('Location: /index.php?page=usuarios');
@@ -64,6 +72,12 @@ if (is_logged_in() && $_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['upd
     $userForm['email_usuario'] = trim((string) ($_POST['email_usuario'] ?? ''));
     $userForm['activo_usuario'] = isset($_POST['activo_usuario']) ? '1' : '0';
     $userPassword = (string) ($_POST['password_usuario'] ?? '');
+    try {
+        portal_usuario_vinculo($userForm, $errors, $userEditId === false ? null : $userEditId);
+    } catch (PDOException $exception) {
+        error_log('Error al validar usuario cliente: ' . $exception->getMessage());
+        $errors[] = 'No se pudo validar el cliente asociado.';
+    }
 
     if ($userEditId === false) {
         $errors[] = 'El usuario a editar no es válido.';
@@ -93,7 +107,7 @@ if (is_logged_in() && $_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['upd
         try {
             if ($userPassword !== '') {
                 $statement = db()->prepare(
-                    'UPDATE usuarios SET nombre_usuario = :nombre_usuario, username_usuario = :username_usuario, email_usuario = :email_usuario, password_hash_usuario = :password_hash_usuario, activo_usuario = :activo_usuario WHERE id_usuario = :id_usuario AND id_empresa = :id_empresa'
+                    'UPDATE usuarios SET nombre_usuario = :nombre_usuario, username_usuario = :username_usuario, email_usuario = :email_usuario, password_hash_usuario = :password_hash_usuario, activo_usuario = :activo_usuario, tipo_usuario = :tipo_usuario, id_cliente_usuario = :id_cliente_usuario WHERE id_usuario = :id_usuario AND id_empresa = :id_empresa'
                 );
                 $statement->execute([
                     ':nombre_usuario' => $userForm['nombre_usuario'],
@@ -101,18 +115,22 @@ if (is_logged_in() && $_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['upd
                     ':email_usuario' => $userForm['email_usuario'] !== '' ? $userForm['email_usuario'] : null,
                     ':password_hash_usuario' => password_hash($userPassword, PASSWORD_BCRYPT),
                     ':activo_usuario' => $userForm['activo_usuario'],
+                    ':tipo_usuario' => $userForm['tipo_usuario'],
+                    ':id_cliente_usuario' => $userForm['id_cliente_usuario'] !== '' ? (int) $userForm['id_cliente_usuario'] : null,
                     ':id_usuario' => $userEditId,
                     ':id_empresa' => current_empresa_id(),
                 ]);
             } else {
                 $statement = db()->prepare(
-                    'UPDATE usuarios SET nombre_usuario = :nombre_usuario, username_usuario = :username_usuario, email_usuario = :email_usuario, activo_usuario = :activo_usuario WHERE id_usuario = :id_usuario AND id_empresa = :id_empresa'
+                    'UPDATE usuarios SET nombre_usuario = :nombre_usuario, username_usuario = :username_usuario, email_usuario = :email_usuario, activo_usuario = :activo_usuario, tipo_usuario = :tipo_usuario, id_cliente_usuario = :id_cliente_usuario WHERE id_usuario = :id_usuario AND id_empresa = :id_empresa'
                 );
                 $statement->execute([
                     ':nombre_usuario' => $userForm['nombre_usuario'],
                     ':username_usuario' => $userForm['username_usuario'],
                     ':email_usuario' => $userForm['email_usuario'] !== '' ? $userForm['email_usuario'] : null,
                     ':activo_usuario' => $userForm['activo_usuario'],
+                    ':tipo_usuario' => $userForm['tipo_usuario'],
+                    ':id_cliente_usuario' => $userForm['id_cliente_usuario'] !== '' ? (int) $userForm['id_cliente_usuario'] : null,
                     ':id_usuario' => $userEditId,
                     ':id_empresa' => current_empresa_id(),
                 ]);
@@ -124,7 +142,7 @@ if (is_logged_in() && $_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['upd
                 $_SESSION['user']['name'] = $userForm['nombre_usuario'];
             }
             $userEditId = null;
-            $userForm = ['nombre_usuario' => '', 'username_usuario' => '', 'email_usuario' => '', 'activo_usuario' => '1'];
+            $userForm = ['nombre_usuario' => '', 'username_usuario' => '', 'email_usuario' => '', 'activo_usuario' => '1', 'tipo_usuario' => 'interno', 'id_cliente_usuario' => ''];
 
             if (($page ?? 'dashboard') !== 'usuarios') {
                 header('Location: /index.php?page=usuarios');

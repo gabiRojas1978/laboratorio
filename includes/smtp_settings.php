@@ -2,6 +2,8 @@
 
 declare(strict_types=1);
 
+require_once __DIR__ . '/smtp_mailer.php';
+
 function smtp_settings_path(int $idEmpresa): string
 {
     return empresa_storage_dir($idEmpresa) . DIRECTORY_SEPARATOR . 'smtp_config.json';

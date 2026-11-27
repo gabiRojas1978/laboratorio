@@ -2,7 +2,19 @@
 
 declare(strict_types=1);
 
-require __DIR__ . '/config/config.php';
+require_once __DIR__ . '/config/config.php';
+require_once __DIR__ . '/includes/portal_clientes.php';
+try {
+    portal_actualizar_sesion();
+} catch (PDOException $exception) {
+    error_log('Error al validar acceso al portal: ' . $exception->getMessage());
+    http_response_code(503);
+    exit('No se pudo validar el acceso. Verifica la migración del portal de clientes.');
+}
+if (is_client_user() && !portal_solicitud_cliente_permitida($_SERVER['REQUEST_METHOD'], $_GET)) {
+    http_response_code(403);
+    exit('No tienes permiso para acceder a esta función.');
+}
 require __DIR__ . '/includes/format_helpers.php';
 require __DIR__ . '/includes/certificado_settings.php';
 require __DIR__ . '/includes/smtp_settings.php';
@@ -21,6 +33,7 @@ require __DIR__ . '/includes/boletin_malezas_pdf.php';
 require __DIR__ . '/includes/boletin_germinacion.php';
 require __DIR__ . '/includes/boletin_germinacion_pdf.php';
 require __DIR__ . '/includes/libro_ingreso.php';
+require __DIR__ . '/includes/presupuesto.php';
 require __DIR__ . '/includes/libro_ingreso_certificado.php';
 require __DIR__ . '/includes/agenda_conteos.php';
 
@@ -81,6 +94,8 @@ $detForm = [
 ];
 $detEditId = null;
 $userForm = [
+    'tipo_usuario' => 'interno',
+    'id_cliente_usuario' => '',
     'nombre_usuario' => '',
     'username_usuario' => '',
     'email_usuario' => '',
@@ -277,6 +292,7 @@ $libroIngresoForm = [
 ];
 
 require __DIR__ . '/handlers/auth.php';
+require __DIR__ . '/handlers/portal_clientes.php';
 require __DIR__ . '/handlers/configuracion.php';
 require __DIR__ . '/handlers/anormalidades.php';
 
@@ -302,6 +318,7 @@ require __DIR__ . '/handlers/boletin_pureza.php';
 require __DIR__ . '/handlers/boletin_malezas.php';
 require __DIR__ . '/handlers/boletin_germinacion.php';
 require __DIR__ . '/handlers/libro_ingreso.php';
+require __DIR__ . '/handlers/presupuesto.php';
 require __DIR__ . '/handlers/libro_ingreso_boletin.php';
 require __DIR__ . '/handlers/libro_ingreso_certificado.php';
 require __DIR__ . '/handlers/agenda_conteos.php';
@@ -311,6 +328,9 @@ if (!is_logged_in()) {
 } else {
     $isLoginPage = false;
     $page = (string) ($_GET['page'] ?? 'dashboard');
+    if (is_client_user()) {
+        $page = 'portal_clientes';
+    }
     if (!array_key_exists($page, $pageMap)) {
         $page = 'dashboard';
     }
@@ -350,7 +370,7 @@ if (($laboratorySettings['nombre_laboratorio'] ?? '') === '') {
         <main class="login-shell">
             <div class="login-panel">
                 <h1 class="login-heading">Acceso al sistema</h1>
-                <p class="login-copy">Inicia sesión para administrar clientes, especies, cultivares y certificados.</p>
+                <p class="login-copy">Inicia sesión para acceder al laboratorio o consultar tus documentos.</p>
 
                 <?php foreach ($errors as $error): ?>
                     <div class="alert alert-danger mb-3"><?php echo htmlspecialchars($error, ENT_QUOTES, 'UTF-8'); ?></div>
@@ -385,7 +405,9 @@ if (($laboratorySettings['nombre_laboratorio'] ?? '') === '') {
                 </div>
 
                 <nav class="sidebar-nav flex-grow-1">
-                    <a class="nav-link <?php echo is_active_page('dashboard', $page); ?>" href="/index.php?page=dashboard"><i class="bi bi-speedometer2"></i> Inicio</a>
+                    <?php if (!is_client_user()): ?>
+                        <a class="nav-link <?php echo is_active_page('dashboard', $page); ?>" href="/index.php?page=dashboard"><i class="bi bi-speedometer2"></i> Inicio</a>
+                    <?php endif; ?>
 
                     <?php foreach ($navigation as $groupKey => $group): ?>
                         <?php

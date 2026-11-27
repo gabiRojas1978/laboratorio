@@ -87,6 +87,10 @@ function get_certificate_settings(int $idEmpresa): array
         'nombre_laboratorio' => '',
         'localidad_pais' => '',
         'firma_director_tecnico' => '',
+        'direccion_laboratorio' => '',
+        'telefono_laboratorio' => '',
+        'email_laboratorio' => '',
+        'cuit_laboratorio' => '',
     ];
     $contents = @file_get_contents(certificate_settings_path($idEmpresa));
     $savedSettings = json_decode((string) $contents, true);

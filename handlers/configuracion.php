@@ -86,16 +86,22 @@ if (is_logged_in() && $_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['sav
         'nombre_laboratorio' => trim((string) ($_POST['nombre_laboratorio'] ?? '')),
         'localidad_pais' => trim((string) ($_POST['localidad_pais_certificado'] ?? '')),
         'firma_director_tecnico' => trim((string) ($_POST['firma_director_tecnico'] ?? '')),
+        'direccion_laboratorio' => trim((string) ($_POST['direccion_laboratorio'] ?? '')),
+        'telefono_laboratorio' => trim((string) ($_POST['telefono_laboratorio'] ?? '')),
+        'email_laboratorio' => trim((string) ($_POST['email_laboratorio'] ?? '')),
+        'cuit_laboratorio' => trim((string) ($_POST['cuit_laboratorio'] ?? '')),
     ];
 
     if ($certificateSettings['nombre_laboratorio'] === '') {
         $errors[] = 'El nombre del laboratorio es obligatorio.';
-    } elseif (strlen($certificateSettings['nombre_laboratorio']) > 150 || strlen($certificateSettings['localidad_pais']) > 255 || strlen($certificateSettings['firma_director_tecnico']) > 255) {
-        $errors[] = 'El nombre del laboratorio puede tener hasta 150 caracteres; la localidad y la firma, hasta 255.';
+    } elseif (strlen($certificateSettings['nombre_laboratorio']) > 150 || strlen($certificateSettings['localidad_pais']) > 255 || strlen($certificateSettings['firma_director_tecnico']) > 255 || strlen($certificateSettings['direccion_laboratorio']) > 255 || strlen($certificateSettings['telefono_laboratorio']) > 30 || strlen($certificateSettings['email_laboratorio']) > 150 || strlen($certificateSettings['cuit_laboratorio']) > 13) {
+        $errors[] = 'Alguno de los datos del laboratorio supera la longitud permitida.';
+    } elseif ($certificateSettings['email_laboratorio'] !== '' && !filter_var($certificateSettings['email_laboratorio'], FILTER_VALIDATE_EMAIL)) {
+        $errors[] = 'El email del laboratorio no es válido.';
     } elseif (!save_certificate_settings(current_empresa_id(), $certificateSettings)) {
         $errors[] = 'No fue posible guardar los datos del certificado. Verifica los permisos de la carpeta de almacenamiento.';
     } else {
-        $_SESSION['success_message'] = 'Datos del pie de certificado actualizados correctamente.';
+        $_SESSION['success_message'] = 'Datos del laboratorio actualizados correctamente.';
         header('Location: /index.php?page=configuracion');
         exit;
     }

@@ -3,19 +3,27 @@
 declare(strict_types=1);
 
 $usuarios = [];
+$usuariosClientes = [];
 try {
-    $usuariosStatement = db()->prepare('SELECT id_usuario, nombre_usuario, username_usuario, email_usuario, activo_usuario, created_at_usuario FROM usuarios WHERE id_empresa = :id_empresa ORDER BY id_usuario DESC');
+    $usuariosStatement = db()->prepare('SELECT u.id_usuario, u.nombre_usuario, u.username_usuario, u.email_usuario, u.activo_usuario, u.created_at_usuario, u.tipo_usuario, cl.nombre_cliente FROM usuarios u LEFT JOIN clientes cl ON cl.id_cliente = u.id_cliente_usuario AND cl.id_empresa = u.id_empresa WHERE u.id_empresa = :id_empresa ORDER BY u.id_usuario DESC');
     $usuariosStatement->execute([':id_empresa' => current_empresa_id()]);
     $usuarios = $usuariosStatement->fetchAll();
 } catch (Throwable $throwable) {
     $errors[] = 'No se pudo cargar el listado de usuarios. Verifica que la tabla exista.';
+}
+try {
+    $statement = db()->prepare('SELECT id_cliente, nombre_cliente FROM clientes WHERE id_empresa = :empresa ORDER BY nombre_cliente');
+    $statement->execute([':empresa' => current_empresa_id()]);
+    $usuariosClientes = $statement->fetchAll();
+} catch (PDOException $exception) {
+    $errors[] = 'No se pudo cargar el listado de clientes.';
 }
 
 if (isset($_GET['edit']) && $userEditId === null) {
     $editId = filter_var($_GET['edit'], FILTER_VALIDATE_INT, ['options' => ['min_range' => 1]]);
     if ($editId !== false) {
         try {
-            $editStatement = db()->prepare('SELECT id_usuario, nombre_usuario, username_usuario, email_usuario, activo_usuario FROM usuarios WHERE id_usuario = :id AND id_empresa = :id_empresa LIMIT 1');
+            $editStatement = db()->prepare('SELECT id_usuario, nombre_usuario, username_usuario, email_usuario, activo_usuario, tipo_usuario, id_cliente_usuario FROM usuarios WHERE id_usuario = :id AND id_empresa = :id_empresa LIMIT 1');
             $editStatement->execute([':id' => $editId, ':id_empresa' => current_empresa_id()]);
             $editRow = $editStatement->fetch();
             if ($editRow !== false) {
@@ -24,6 +32,8 @@ if (isset($_GET['edit']) && $userEditId === null) {
                 $userForm['username_usuario'] = (string) ($editRow['username_usuario'] ?? '');
                 $userForm['email_usuario'] = (string) ($editRow['email_usuario'] ?? '');
                 $userForm['activo_usuario'] = (string) ($editRow['activo_usuario'] ?? '1');
+                $userForm['tipo_usuario'] = $editRow['tipo_usuario'];
+                $userForm['id_cliente_usuario'] = (string) ($editRow['id_cliente_usuario'] ?? '');
             }
         } catch (Throwable $throwable) {
             $errors[] = 'No se pudo cargar el usuario para edición.';
@@ -55,6 +65,37 @@ if (isset($_GET['edit']) && $userEditId === null) {
         <?php else: ?>
             <input type="hidden" name="save_usuario" value="1">
         <?php endif; ?>
+
+        <div class="col-md-6">
+            <label for="tipo_usuario" class="form-label">Tipo de acceso *</label>
+            <select class="form-select" id="tipo_usuario" name="tipo_usuario" required>
+                <option value="interno" <?php echo $userForm['tipo_usuario'] === 'interno' ? 'selected' : ''; ?>>Interno — administración del laboratorio</option>
+                <option value="cliente" <?php echo $userForm['tipo_usuario'] === 'cliente' ? 'selected' : ''; ?>>Cliente — consulta y descarga de documentos</option>
+            </select>
+        </div>
+        <div class="col-md-6" id="usuario_cliente_campo">
+            <label for="id_cliente_usuario" class="form-label">Cliente asociado *</label>
+            <select class="form-select" id="id_cliente_usuario" name="id_cliente_usuario">
+                <option value="">Selecciona un cliente</option>
+                <?php foreach ($usuariosClientes as $cliente): ?>
+                    <option value="<?php echo (int) $cliente['id_cliente']; ?>" <?php echo $userForm['id_cliente_usuario'] === (string) $cliente['id_cliente'] ? 'selected' : ''; ?>><?php echo htmlspecialchars($cliente['nombre_cliente'], ENT_QUOTES, 'UTF-8'); ?></option>
+                <?php endforeach; ?>
+            </select>
+        </div>
+        <script>
+            (function () {
+                const tipo = document.getElementById('tipo_usuario');
+                const cliente = document.getElementById('id_cliente_usuario');
+                function actualizarCliente() {
+                    const esCliente = tipo.value === 'cliente';
+                    document.getElementById('usuario_cliente_campo').hidden = !esCliente;
+                    cliente.required = esCliente;
+                    cliente.disabled = !esCliente;
+                }
+                tipo.addEventListener('change', actualizarCliente);
+                actualizarCliente();
+            })();
+        </script>
 
         <div class="col-md-6">
             <label for="nombre_usuario" class="form-label">Nombre completo *</label>
@@ -102,6 +143,7 @@ if (isset($_GET['edit']) && $userEditId === null) {
                     <th>Nombre</th>
                     <th>Usuario</th>
                     <th>Email</th>
+                    <th>Acceso / Cliente</th>
                     <th>Estado</th>
                     <th>Alta</th>
                     <th>Acciones</th>
@@ -110,7 +152,7 @@ if (isset($_GET['edit']) && $userEditId === null) {
             <tbody>
                 <?php if ($usuarios === []): ?>
                     <tr>
-                        <td colspan="7" class="text-center text-muted">No hay usuarios cargados aún.</td>
+                        <td colspan="8" class="text-center text-muted">No hay usuarios cargados aún.</td>
                     </tr>
                 <?php else: ?>
                     <?php foreach ($usuarios as $usuario): ?>
@@ -119,6 +161,7 @@ if (isset($_GET['edit']) && $userEditId === null) {
                             <td><?php echo htmlspecialchars((string) $usuario['nombre_usuario'], ENT_QUOTES, 'UTF-8'); ?></td>
                             <td><?php echo htmlspecialchars((string) $usuario['username_usuario'], ENT_QUOTES, 'UTF-8'); ?></td>
                             <td><?php echo htmlspecialchars((string) ($usuario['email_usuario'] ?? ''), ENT_QUOTES, 'UTF-8'); ?></td>
+                            <td><?php echo $usuario['tipo_usuario'] === 'cliente' ? 'Cliente: ' . htmlspecialchars((string) ($usuario['nombre_cliente'] ?? 'Sin cliente asociado'), ENT_QUOTES, 'UTF-8') : 'Interno'; ?></td>
                             <td><?php echo ((int) $usuario['activo_usuario'] === 1) ? '<span class="badge bg-success">Activo</span>' : '<span class="badge bg-secondary">Inactivo</span>'; ?></td>
                             <td><?php echo htmlspecialchars((string) ($usuario['created_at_usuario'] ?? ''), ENT_QUOTES, 'UTF-8'); ?></td>
                             <td class="text-nowrap">
